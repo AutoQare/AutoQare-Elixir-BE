@@ -1,0 +1,12 @@
+Hi <%= @first_name || "there" %>,
+
+<%= @title %>
+<%= if @body do %>
+
+<%= @body %>
+<% end %>
+
+<%= facts_text(@facts) %>
+<%= if @url do %>Open delivery health: <%= @url %><% end %>
+
+Forwarded mail may not be landing. Check the mail provider’s webhook.

@@ -1,6 +1,6 @@
 defmodule ApiShared.FallbackController do
   @moduledoc """
-  The single error contract (copied from mCart). Written before the second
+  The single error contract (copied from tCart). Written before the second
   controller exists, because an error shape that is converged on is an error
   shape that differs per endpoint.
 
@@ -31,8 +31,8 @@ defmodule ApiShared.FallbackController do
 
   require Logger
 
+  alias ApiShared.Refusal
   alias Core.Accounts.Password
-  alias Core.Approvals.Sheet, as: ApprovalSheet
   alias Core.Leads.Words, as: LeadWords
   alias Core.Tasks.Words
   alias Ecto.Changeset
@@ -195,7 +195,7 @@ defmodule ApiShared.FallbackController do
   # A handle another contact holds: "That LinkedIn is Mei Chen's already.";
   # `details` names the contact, so the form can offer *Use Mei Chen*.
   def call(conn, {:error, {:contact_exists, %{contact_id: id, name: name} = exists}}) do
-    respond(conn, 409, "contact_exists", contact_words(Map.get(exists, :kind), name), %{
+    respond(conn, 409, "contact_exists", Refusal.contact_words(Map.get(exists, :kind), name), %{
       contact_id: id,
       name: name
     })
@@ -207,7 +207,7 @@ defmodule ApiShared.FallbackController do
   # pending, or a slot that has decided already: `details` says where it
   # is now, so the sheet can re-read and say so.
   def call(conn, {:error, {:approval_not_pending, %{state: state, version: version}}}) do
-    respond(conn, 409, "approval_not_pending", approval_words(state), %{
+    respond(conn, 409, "approval_not_pending", Refusal.approval_words(state), %{
       state: to_string(state),
       version: version
     })
@@ -215,6 +215,13 @@ defmodule ApiShared.FallbackController do
 
   def call(conn, {:error, :not_reviewer}) do
     respond(conn, 403, "not_reviewer", "This isn't yours to decide.")
+  end
+
+  # ── Behaviour (AQ-10 §4, §11.4) ─────────────────────────────────────────────
+
+  # *Forget* by staff who see the person: a team lead's, or the system admin's.
+  def call(conn, {:error, :forget_not_allowed}) do
+    respond(conn, 403, "forget_not_allowed", "Only a team lead can forget someone.")
   end
 
   # ── Forwarded mail and invitations (AQ-09 §4, §11.4) ────────────────────────
@@ -242,6 +249,61 @@ defmodule ApiShared.FallbackController do
   # The webhook with no password configured on this server.
   def call(conn, {:error, :inbound_off}) do
     respond(conn, 503, "inbound_off", "Forwarded mail isn't set up on this server.")
+  end
+
+  # ── Filters (AQ-11B §11.4) ──────────────────────────────────────────────────
+
+  # A `$where` or `$order` field, operator or value the list doesn't take
+  # (`Data.Filters`): FatEcto would drop it silently and answer every row.
+  def call(conn, {:error, {:invalid_filter, details}}) when is_map(details) do
+    field = details |> Map.keys() |> List.first()
+
+    respond(
+      conn,
+      422,
+      "invalid_filter",
+      "This list can't be filtered that way: #{field}.",
+      details
+    )
+  end
+
+  # ── Imports (AQ-12 §11.4) ───────────────────────────────────────────────────
+
+  def call(conn, {:error, {:import_too_large, %{max_rows: rows, max_bytes: bytes} = limits}}) do
+    respond(
+      conn,
+      413,
+      "import_too_large",
+      "That file is too big to import: at most #{Refusal.count(rows)} rows and " <>
+        "#{megabytes(bytes)} a file.",
+      limits
+    )
+  end
+
+  def call(conn, {:error, {:import_unreadable, words}}) when is_binary(words) do
+    respond(conn, 422, "import_unreadable", words)
+  end
+
+  def call(conn, {:error, :import_unreadable}) do
+    respond(conn, 422, "import_unreadable", Refusal.unreadable_words())
+  end
+
+  def call(conn, {:error, {:import_not_ready, %{state: state}}}) do
+    respond(conn, 409, "import_not_ready", Refusal.import_not_ready_words(state), %{
+      state: to_string(state)
+    })
+  end
+
+  def call(conn, {:error, {:undo_expired, %{undo_until: until}}}) do
+    respond(conn, 409, "undo_expired", "The undo for this import has run out.", %{
+      undo_until: until
+    })
+  end
+
+  def call(conn, {:error, {:import_not_undoable, %{state: state}}}) do
+    respond(conn, 409, "import_not_undoable", Refusal.not_undoable_words(state), %{
+      state: to_string(state)
+    })
   end
 
   def call(conn, {:error, :conflict}) do
@@ -364,75 +426,9 @@ defmodule ApiShared.FallbackController do
 
   @doc """
   A refusal as `{code, message}` without a response: what `POST /leads/bulk`
-  lists for each lead it could not act on (AQ-04B §8.1, QP4b-19). The same
-  codes and words as the clauses above, for the reasons a lead verb gives.
+  lists for each lead it could not act on (`ApiShared.Refusal`).
   """
-  @spec describe(term()) :: %{code: String.t(), message: String.t()}
-  def describe(%Changeset{} = changeset), do: field_words(errors_on(changeset))
-
-  def describe({:missing, fields}),
-    do: field_words(Map.new(List.wrap(fields), &{&1, ["is required"]}))
-
-  def describe({:invalid, details}) when is_map(details), do: field_words(details)
-  def describe(:not_found), do: %{code: "not_found", message: "We could not find that."}
-
-  def describe({:forbidden, words}) when is_binary(words),
-    do: %{code: "forbidden", message: words}
-
-  def describe({:lead_moved, %{state: state} = lead}) do
-    stage = Map.get(lead, :stage)
-
-    %{
-      code: "lead_moved",
-      message:
-        "This lead moved while you were looking. It's now " <>
-          LeadWords.place(state, stage && Map.get(stage, :name), Map.get(lead, :outcome)) <> "."
-    }
-  end
-
-  def describe({:duplicate_application, %{message: message}}),
-    do: %{code: "duplicate_application", message: message}
-
-  def describe(:outcome_required), do: %{code: "outcome_required", message: "Say how it ended."}
-
-  def describe({:approval_not_pending, %{state: state}}),
-    do: %{code: "approval_not_pending", message: approval_words(state)}
-
-  def describe(:not_reviewer), do: %{code: "not_reviewer", message: "This isn't yours to decide."}
-
-  def describe(:override_reason_required),
-    do: %{code: "override_reason_required", message: "Say why you're applying again."}
-
-  def describe(reason) do
-    Logger.error("Unhandled bulk refusal: #{inspect(reason)}")
-    %{code: "internal_error", message: "Something went wrong at our end."}
-  end
-
-  defp approval_words(state),
-    do:
-      "This approval changed while you were looking. It's now #{ApprovalSheet.state_words(state)}."
-
-  defp contact_words(kind, name) do
-    handle =
-      case kind do
-        :email -> "email"
-        :linkedin -> "LinkedIn"
-        :upwork -> "Upwork account"
-        :phone -> "phone number"
-        _other -> "handle"
-      end
-
-    "That #{handle} is #{name}'s already."
-  end
-
-  defp field_words(details) do
-    message =
-      Enum.map_join(details, " ", fn {field, messages} ->
-        "#{String.capitalize(String.replace(to_string(field), "_", " "))} #{Enum.join(List.wrap(messages), ", ")}."
-      end)
-
-    %{code: "validation_failed", message: message}
-  end
+  defdelegate describe(reason), to: Refusal
 
   # Said the way somebody would say it. "3600 seconds" is a unit nobody
   # thinks in, and "in 0 minutes" is worse than a rounding error.

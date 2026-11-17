@@ -14,6 +14,7 @@ defmodule Core.Organisation.Invitations do
   alias Core.Audit
   alias Core.Auth.Google
   alias Core.Mail
+  alias Core.Notifications.Account, as: AccountNotices
   alias Core.Organisation.Teams
   alias Data.Accounts
   alias Data.Accounts.User
@@ -43,15 +44,19 @@ defmodule Core.Organisation.Invitations do
 
   # ── Staff side ──────────────────────────────────────────────────────────────
 
-  @doc "`GET /invitations?state=open`: all for the system admin, the caller's teams' for a team lead."
-  @spec list(Scope.t(), map()) :: {:ok, [Invitation.t()]} | {:error, term()}
-  def list(%Scope{organisation: organisation} = scope, params \\ %{}) do
-    with :ok <- Access.why_not(scope, :list, {:invitation, %{}}) do
-      state = if (params[:state] || params["state"]) == "open", do: :open, else: nil
-      team_ids = if Scope.admin?(scope), do: nil, else: Scope.team_ids(scope)
+  @doc """
+  `GET /invitations?$where`: all for the system admin, the caller's teams'
+  for a team lead. `$where` is `Data.Filters.Invitations`' — `state`
+  `open` or `past` at `now`, `kind`, `team_id`, `customer_id`, `q`.
+  """
+  @spec list(Scope.t(), map(), DateTime.t()) :: {:ok, [Invitation.t()]} | {:error, term()}
+  def list(%Scope{organisation: organisation} = scope, params \\ %{}, now \\ Core.Clock.now()) do
+    params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
 
-      {:ok,
-       Invitations.list(organisation.id, state: state, now: Core.Clock.now(), team_ids: team_ids)}
+    with :ok <- Access.why_not(scope, :list, {:invitation, %{}}) do
+      team_ids = if Scope.admin?(scope), do: nil, else: Scope.team_ids(scope)
+      context = Data.Filters.context(scope, now: now)
+      Invitations.list(organisation.id, team_ids, params["$where"], context)
     end
   end
 
@@ -299,11 +304,31 @@ defmodule Core.Organisation.Invitations do
             now: now
           )
 
-        %{user: Accounts.with_person(user), landing: landing(invitation), how: created}
+        # AQ-10B §5.1 A3, A5: the inviter (and a customer's people) told;
+        # a new account welcomed.
+        events = [
+          AccountNotices.invitation_accepted(accepted, user, now),
+          AccountNotices.welcome(
+            user,
+            invitation.organisation_id,
+            invitation.kind == :customer,
+            now
+          )
+        ]
+
+        {%{user: Accounts.with_person(user), landing: landing(invitation), how: created}, events}
       else
         {:error, reason} -> Repo.rollback(reason)
       end
     end)
+    |> case do
+      {:ok, {answer, events}} ->
+        :ok = Core.Notifications.send_events(events)
+        {:ok, answer}
+
+      other ->
+        other
+    end
   end
 
   defp account(_invitation, {:existing, user}, _params, _now), do: {:ok, user, :joined}

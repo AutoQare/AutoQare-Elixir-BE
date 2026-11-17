@@ -1,0 +1,5 @@
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin:16px 0 0 0;">
+<%= for item <- @items do %>  <tr>
+    <td style="padding:8px 0;border-top:1px solid #DEE1E6;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:20px;color:#14171C;"><%= item %></td>
+  </tr>
+<% end %></table>

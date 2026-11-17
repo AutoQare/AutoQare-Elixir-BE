@@ -27,8 +27,9 @@ defmodule Data.JobListTest do
       annual = Utils.Units.annualise(job.comp_max_minor, period)
 
       at = fn min ->
-        filters = %{money: %{min: min, currency: "USD", period: :year}}
-        team.id |> JobList.all(filters) |> Enum.map(& &1.id) |> Enum.member?(job.id)
+        money = %{"min_minor" => min, "currency" => "USD", "period" => "year"}
+        {:ok, jobs} = JobList.all(team.id, %{"money" => %{"$GTE" => money}})
+        jobs |> Enum.map(& &1.id) |> Enum.member?(job.id)
       end
 
       assert at.(annual), "#{period}: at the floor"
@@ -79,9 +80,14 @@ defmodule Data.JobListTest do
     assert mine.canonical_key == theirs.canonical_key and mine.id != theirs.id
     ids = &(&1 |> Enum.map(fn job -> job.id end) |> Enum.sort())
 
-    assert ids.(JobList.all(team.id, %{})) == Enum.sort([mine.id, peer.id])
-    assert ids.(JobList.all(other.id, %{})) == [theirs.id]
-    assert ids.(JobList.all(team.id, %{visible_to: {scope.user.id, false}})) == [mine.id]
-    assert ids.(JobList.all(team.id, %{visible_to: {scope.user.id, true}})) == ids.([mine, peer])
+    all = fn team_id, visible_to ->
+      {:ok, query} = JobList.matching(team_id, visible_to, %{})
+      JobList.all(query)
+    end
+
+    assert ids.(all.(team.id, :all)) == Enum.sort([mine.id, peer.id])
+    assert ids.(all.(other.id, :all)) == [theirs.id]
+    assert ids.(all.(team.id, {scope.user.id, false})) == [mine.id]
+    assert ids.(all.(team.id, {scope.user.id, true})) == ids.([mine, peer])
   end
 end

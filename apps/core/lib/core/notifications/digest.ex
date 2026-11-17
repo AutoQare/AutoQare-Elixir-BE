@@ -1,14 +1,16 @@
 defmodule Core.Notifications.Digest do
   @moduledoc """
-  What a person's daily digest says, and whether it is due (AQ-08 §7.4,
-  §11.4, QP8-12). **Pure**: rows and settings in, words out.
+  What a person's digest says, and whether it is due (AQ-08 §7.4, §11.4,
+  QP8-12; AQ-10B QP10b-12). **Pure**: rows and settings in, words out.
 
-  mCart's restraint, kept: **one a day**, at the person's time, in their
-  zone, keyed by that local date (`digest:<user>:<local date>`), and
-  **nothing when there is nothing to say**. AutoQare's says the person's
-  unread notifications of digest kinds (tasks due, follow-ups, archive
-  warnings, triage) since their last digest:
-  - the title: "1 thing you haven't read" / "5 things you haven't read";
+  tCart's restraint, kept: **one a day** (or, weekly, on Monday), at the
+  person's time, in their zone, keyed by that local date
+  (`digest:<user>:<local date>`), and **nothing when there is nothing to
+  say**. AutoQare's says the person's unread notifications of digest kinds
+  (tasks due, follow-ups, archive warnings, triage) since their last
+  digest:
+  - the title: "1 thing waiting for you" / "5 things waiting for you"
+    (AQ-10B §7.1);
   - the body: a line per group ("Tasks · 3"), a blank line, then up to 50
     titles, oldest first, then "and 12 more".
   """
@@ -17,21 +19,41 @@ defmodule Core.Notifications.Digest do
 
   @doc """
   Whether the person's digest is due at `now`: their digest time has passed
-  today in their zone. Answers `{:due, local_date}` or `:not_yet`.
+  today in their zone, and for `:weekly` today is Monday there; `:off`
+  never. Answers `{:due, local_date}` or `:not_yet`.
 
       iex> Core.Notifications.Digest.due(~T[08:00:00], "Asia/Karachi", ~U[2026-11-12 03:30:00Z])
       {:due, ~D[2026-11-12]}
       iex> Core.Notifications.Digest.due(~T[08:00:00], "Asia/Karachi", ~U[2026-11-12 02:30:00Z])
       :not_yet
+      iex> Core.Notifications.Digest.due(~T[08:00:00], "Asia/Karachi", ~U[2026-11-12 03:30:00Z], :weekly)
+      :not_yet
+      iex> Core.Notifications.Digest.due(~T[08:00:00], "Asia/Karachi", ~U[2026-11-16 03:30:00Z], :weekly)
+      {:due, ~D[2026-11-16]}
   """
-  @spec due(Time.t(), String.t() | nil, DateTime.t()) :: {:due, Date.t()} | :not_yet
-  def due(%Time{} = at, zone, %DateTime{} = now) do
+  @spec due(Time.t(), String.t() | nil, DateTime.t(), atom()) :: {:due, Date.t()} | :not_yet
+  def due(%Time{} = at, zone, %DateTime{} = now, frequency \\ :daily) do
     local = local(now, zone)
+    date = DateTime.to_date(local)
 
-    if Time.compare(DateTime.to_time(local), at) == :lt,
-      do: :not_yet,
-      else: {:due, DateTime.to_date(local)}
+    cond do
+      frequency == :off -> :not_yet
+      frequency == :weekly and Date.day_of_week(date) != 1 -> :not_yet
+      Time.compare(DateTime.to_time(local), at) == :lt -> :not_yet
+      true -> {:due, date}
+    end
   end
+
+  @doc """
+  How far back a person's first digest looks, in seconds: a day, or a week
+  for a weekly one.
+
+      iex> Core.Notifications.Digest.window_s(:weekly)
+      604800
+  """
+  @spec window_s(atom()) :: pos_integer()
+  def window_s(:weekly), do: 7 * 86_400
+  def window_s(_daily), do: 86_400
 
   @doc """
   The key that makes it once a day.
@@ -53,7 +75,7 @@ defmodule Core.Notifications.Digest do
       ...>   [%{title: "Follow up on “Golang”", group: "leads"}],
       ...>   [%{key: "tasks", label: "Tasks"}, %{key: "leads", label: "Leads"}]
       ...> )
-      %{title: "1 thing you haven't read", body: "Leads · 1\\n\\nFollow up on “Golang”"}
+      %{title: "1 thing waiting for you", body: "Leads · 1\\n\\nFollow up on “Golang”"}
   """
   @spec compose([map()], [map()]) :: %{title: String.t(), body: String.t()} | nil
   def compose([], _groups), do: nil
@@ -78,13 +100,13 @@ defmodule Core.Notifications.Digest do
   The digest's title.
 
       iex> Core.Notifications.Digest.title(1)
-      "1 thing you haven't read"
+      "1 thing waiting for you"
       iex> Core.Notifications.Digest.title(5)
-      "5 things you haven't read"
+      "5 things waiting for you"
   """
   @spec title(pos_integer()) :: String.t()
-  def title(1), do: "1 thing you haven't read"
-  def title(n), do: "#{n} things you haven't read"
+  def title(1), do: "1 thing waiting for you"
+  def title(n), do: "#{n} things waiting for you"
 
   defp local(now, zone) do
     case DateTime.shift_zone(now, zone || "Etc/UTC") do

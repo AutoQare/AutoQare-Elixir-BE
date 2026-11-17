@@ -1,6 +1,6 @@
 defmodule Core.Storage do
   @moduledoc """
-  Where uploaded bytes live (mCart's seam, trimmed). **One behaviour, one
+  Where uploaded bytes live (tCart's seam, trimmed). **One behaviour, one
   adapter today** (`Core.Storage.Local`, a folder on this box), chosen in
   config so S3 is a config change and not a frontend release — which is the
   whole reason the three-step upload exists.

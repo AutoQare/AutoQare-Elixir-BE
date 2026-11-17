@@ -1,5 +1,5 @@
 defmodule ApiTeam.TeamController do
-  @moduledoc "Teams, their settings and their members (AQ-01 §6.2)."
+  @moduledoc "Teams, their settings and their members (AQ-01 §6.2; AQ-11 §7.4: a member's daily target)."
 
   use Phoenix.Controller, formats: [:json]
 
@@ -47,8 +47,17 @@ defmodule ApiTeam.TeamController do
   end
 
   def members(conn, %{"id" => id}) do
-    with {:ok, members} <- Teams.list_members(conn.assigns.scope, id) do
+    with {:ok, members} <- Teams.list_members(conn.assigns.scope, id, Clock.now()) do
       render(conn, :members, members: members)
+    end
+  end
+
+  # AQ-11 §7.4: `{daily_target: n | null}`.
+  def update_member(conn, %{"id" => id, "user_id" => user_id} = params) do
+    body = Map.drop(params, ["id", "user_id"])
+
+    with {:ok, member} <- Teams.update_member(conn.assigns.scope, id, user_id, body, Clock.now()) do
+      render(conn, :member, member: member)
     end
   end
 

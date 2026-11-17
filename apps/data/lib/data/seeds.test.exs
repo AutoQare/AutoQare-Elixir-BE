@@ -44,20 +44,21 @@ defmodule Data.SeedsTest do
 
   describe "run" do
     test "an empty kind runs and loads nothing; reference and production run their groups" do
-      # The suite's database ran the reference seed before the suite: both
-      # sites' selector documents are there already, so both are kept.
+      # The suite's database ran the reference seed before the suite: the
+      # five sites' selector documents (AQ-12: Indeed, YC and Wellfound
+      # joined LinkedIn and Upwork) are there already, so all are kept.
       assert {:ok,
               [
-                {"the notification groups and kinds", %{kept: 38}},
-                {"the extension's selector documents", %{inserted: 0, kept: 2}}
+                {"the notification groups and kinds", %{kept: 77}},
+                {"the extension's selector documents", %{inserted: 0, kept: 5}}
               ]} = Seeds.run(:reference)
 
       assert Seeds.run(:demo) == {:ok, []}
 
       assert {:ok,
               [
-                {"the notification groups and kinds", %{inserted: 0, updated: 0, kept: 38}},
-                {"the extension's selector documents", %{inserted: 0, kept: 2}},
+                {"the notification groups and kinds", %{inserted: 0, updated: 0, kept: 77}},
+                {"the extension's selector documents", %{inserted: 0, kept: 5}},
                 {"the skills vocabulary", %{inserted: 0, kept: 0}}
               ]} = Seeds.run(:prod)
 

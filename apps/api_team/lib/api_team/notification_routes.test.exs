@@ -19,7 +19,7 @@ defmodule ApiTeam.NotificationRoutesTest do
     settings = body(conn)
 
     assert Enum.map(settings["groups"], & &1["key"]) ==
-             ~w(tasks leads conversations meetings approvals account)
+             ~w(tasks leads conversations meetings approvals profiles behaviour account)
 
     assert %{
              "key" => "conversations",
@@ -33,7 +33,12 @@ defmodule ApiTeam.NotificationRoutesTest do
            } = Enum.at(settings["groups"], 2)
 
     assert settings["quiet_hours"] == %{"from" => nil, "to" => nil}
-    assert settings["digest"] == %{"on" => true, "at" => "08:00"}
+    assert settings["digest"] == %{"frequency" => "daily", "at" => "08:00"}
+    assert settings["snoozed_until"] == nil
+
+    assert %{"kinds" => [%{"key" => "conversations.reply_received"} | _]} =
+             Enum.at(settings["groups"], 2)
+
     assert settings["zone"] == "Asia/Karachi"
     assert settings["has"] == %{"push" => false, "extension" => false}
   end
@@ -48,14 +53,45 @@ defmodule ApiTeam.NotificationRoutesTest do
     assert call(c.fiza, :put, "/v1/notifications/settings/groups/nope", %{push: false}).status ==
              404
 
+    # AQ-10B §11.4: Account can be switched off; its locked kinds can't.
     account = call(c.fiza, :put, "/v1/notifications/settings/groups/account", %{email: false})
-    assert account.status == 422
-    assert code(account) == "validation_failed"
-    assert body(account)["error"]["details"] == %{"group" => ["These can't be turned off."]}
+    assert account.status == 200
 
-    unused = call(c.fiza, :put, "/v1/notifications/settings/groups/tasks", %{email: false})
+    unused = call(c.fiza, :put, "/v1/notifications/settings/groups/leads", %{email: false})
     assert unused.status == 422
     assert body(unused)["error"]["details"] == %{"email" => ["This group doesn't use it."]}
+  end
+
+  test "PUT /notifications/settings/kinds/:key and /snooze: the settings; 404 and the 422s", c do
+    conn = call(c.fiza, :put, "/v1/notifications/settings/kinds/tasks.assigned", %{email: true})
+    assert conn.status == 200
+
+    kinds = for g <- body(conn)["groups"], k <- g["kinds"], into: %{}, do: {k["key"], k}
+    assert %{"email" => true, "push" => true, "digest" => nil} = kinds["tasks.assigned"]
+
+    locked =
+      call(c.fiza, :put, "/v1/notifications/settings/kinds/account.security", %{email: false})
+
+    assert locked.status == 422
+    assert body(locked)["error"]["details"] == %{"kind" => ["These can't be turned off."]}
+
+    assert call(c.fiza, :put, "/v1/notifications/settings/kinds/nope.kind", %{push: false}).status ==
+             404
+
+    assert call(c.fiza, :put, "/v1/notifications/settings/kinds/leads.weekly_report", %{
+             email: false
+           }).status == 404
+
+    snoozed = call(c.fiza, :put, "/v1/notifications/settings/snooze", %{for: "hour"})
+    assert snoozed.status == 200
+    assert body(snoozed)["snoozed_until"]
+
+    assert body(call(c.fiza, :put, "/v1/notifications/settings/snooze", %{for: nil}))[
+             "snoozed_until"
+           ] == nil
+
+    bad = call(c.fiza, :put, "/v1/notifications/settings/snooze", %{for: "year"})
+    assert bad.status == 422
   end
 
   test "/me/push: app is the console's whatever the body says; a known endpoint moves; the test is 202",

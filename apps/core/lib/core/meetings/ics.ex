@@ -5,7 +5,8 @@ defmodule Core.Meetings.Ics do
   change), `METHOD:PUBLISH`, the times in UTC, the join link in `LOCATION`
   and `DESCRIPTION`; a cancelled meeting's file says `STATUS:CANCELLED`.
   No calendar sync (Q24). RFC 5545: CRLF line ends, text escaped, lines
-  folded at 75 octets.
+  folded at 75 octets. AQ-10B §11.4 (QP10b-21): an `ORGANIZER` line, the
+  lead's owner, so a calendar accepts an emailed `REQUEST`.
   """
 
   alias Core.Meetings.Words
@@ -35,6 +36,7 @@ defmodule Core.Meetings.Ics do
       "DTSTART:#{stamp(meeting.starts_at)}",
       "DTEND:#{stamp(meeting.ends_at)}",
       "SUMMARY:#{escape(summary)}",
+      organizer(Map.get(meeting, :organizer)),
       location && "LOCATION:#{escape(location)}",
       description != [] && "DESCRIPTION:#{escape(Enum.join(description, "\n"))}",
       meeting.join_url && "URL:#{meeting.join_url}",
@@ -57,8 +59,39 @@ defmodule Core.Meetings.Ics do
     job = meeting.lead.job
     summary = if job.company, do: "#{meeting.title} · #{job.company.name}", else: meeting.title
     about = "#{job.title} · #{meeting.lead.profile.title} · #{Words.platform(meeting.platform)}"
-    render(meeting, summary, [about], method)
+
+    meeting
+    |> Map.put(:organizer, owner(meeting.lead))
+    |> render(summary, [about], method)
   end
+
+  defp owner(%{owner_user: %{email: email} = user}) when is_binary(email) do
+    name =
+      case user do
+        %{person: %{display_name: name}} when is_binary(name) -> name
+        _no_person -> nil
+      end
+
+    {name, email}
+  end
+
+  defp owner(_lead), do: nil
+
+  @doc ~S"""
+  The `ORGANIZER` line for `{name, email}`, or nothing.
+
+      iex> Core.Meetings.Ics.organizer({"Fiza Khan", "fiza@example.com"})
+      "ORGANIZER;CN=\"Fiza Khan\":mailto:fiza@example.com"
+      iex> Core.Meetings.Ics.organizer(nil)
+      nil
+  """
+  @spec organizer({String.t() | nil, String.t()} | nil) :: String.t() | nil
+  def organizer({nil, email}), do: "ORGANIZER:mailto:#{email}"
+
+  def organizer({name, email}),
+    do: "ORGANIZER;CN=\"#{String.replace(name, ~r/[\";:,\r\n]/, "")}\":mailto:#{email}"
+
+  def organizer(_none), do: nil
 
   defp status(:cancelled), do: "CANCELLED"
   defp status(_scheduled_or_past), do: "CONFIRMED"

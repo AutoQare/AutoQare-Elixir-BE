@@ -78,17 +78,27 @@ defmodule Data.Conversations do
     |> load_all()
   end
 
-  @doc "A team's triage (QP6-9): linked to no lead, not ignored, newest first."
-  @spec triage(binary()) :: [Conversation.t()]
-  def triage(team_id) do
+  @doc """
+  A team's triage (QP6-9): linked to no lead, not ignored, newest first;
+  `where` is the list's `$where` (`Data.Filters.Triage`: `profile_owner`),
+  `context` what it reads (`team_id`, `user_id`). `{:ok, conversations}`,
+  or the 422 `invalid_filter`.
+  """
+  @spec triage(binary(), term(), map()) :: {:ok, [Conversation.t()]} | {:error, term()}
+  def triage(team_id, where \\ nil, context \\ %{}) do
     linked = from(l in ConversationLead, select: l.conversation_id)
 
-    from(c in Conversation,
-      where: c.team_id == ^team_id and is_nil(c.ignored_at) and c.id not in subquery(linked),
-      order_by: [desc_nulls_last: c.last_message_at, desc: c.id],
-      limit: 200
-    )
-    |> load_all()
+    base =
+      from(c in Conversation,
+        where: c.team_id == ^team_id and is_nil(c.ignored_at) and c.id not in subquery(linked),
+        order_by: [desc_nulls_last: c.last_message_at, desc: c.id],
+        limit: 200
+      )
+
+    context = Map.put(context, :team_id, team_id)
+
+    with {:ok, query} <- Data.Filters.where(base, Data.Filters.Triage, where, context),
+         do: {:ok, load_all(query)}
   end
 
   @doc "The team's conversation on a provider's thread, or `nil`."

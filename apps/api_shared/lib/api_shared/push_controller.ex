@@ -1,6 +1,6 @@
 defmodule ApiShared.PushController do
   @moduledoc """
-  Push on this browser (AQ-08 §7.6, §11.4; mCart's), served by both apps:
+  Push on this browser (AQ-08 §7.6, §11.4; tCart's), served by both apps:
   the server's public key and the person's browsers, a browser turned on or
   taken off, and *Send a test*. **`app` is the surface's** (`/team/v1` →
   `team`, `/client/v1` → `client`), never the body's. `Core.Notifications.Push`

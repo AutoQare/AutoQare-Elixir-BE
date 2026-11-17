@@ -19,7 +19,12 @@ defmodule Core.Inbound do
      `gmail_confirmation`.
   5. **The same mail by another route** — P6's key, `rfc:<Message-ID>` —
      is `duplicate`, naming the message it is.
-  6. Otherwise it **lands** (`Core.Conversations.Forward`), as the system
+  6. **A job alert** (AQ-12 §7, `Core.Conversations.Alerts`) is read, not
+     landed: its jobs go into the pools of the teams serving the receiving
+     profile's customer (`Core.Jobs.Alerts`), and the row keeps how many
+     (`alert_jobs`) with `landed`; the same alert again by another route
+     (its Message-ID) is `duplicate`, with 0.
+  7. Otherwise it **lands** (`Core.Conversations.Forward`), as the system
      for the channel's organisation: `landed`.
 
   A body over the webhook's cap never reaches here: `Api.Endpoint`
@@ -30,8 +35,9 @@ defmodule Core.Inbound do
   is off, 503 `inbound_off`), `max_bytes`, `per_minute`.
   """
 
-  alias Core.Conversations.{Eml, Forward}
+  alias Core.Conversations.{Alerts, Eml, Forward}
   alias Core.Inbound.{Address, Gmail, Postmark}
+  alias Core.Jobs.Alerts, as: AlertJobs
   alias Core.Notifications
   alias Core.Plugs.RateLimit
   alias Core.Realtime
@@ -41,7 +47,12 @@ defmodule Core.Inbound do
   alias Data.Inbound, as: Store
   alias Data.Scope
 
-  @type answer :: %{outcome: atom(), message_id: binary() | nil, conversation_id: binary() | nil}
+  @type answer :: %{
+          outcome: atom(),
+          message_id: binary() | nil,
+          conversation_id: binary() | nil,
+          alert_jobs: non_neg_integer() | nil
+        }
 
   # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -155,15 +166,25 @@ defmodule Core.Inbound do
       channel_id: channel && channel.id
     }
 
-    {outcome, message, rfc} = outcome(scope, channel, d.raw, now)
+    {outcome, message, rfc, jobs} = scope |> outcome(channel, d.raw, now) |> with_jobs()
 
     {:ok, _row} =
       Store.log(
-        Map.merge(row, %{outcome: outcome, message_id: message && message.id, rfc_message_id: rfc})
+        Map.merge(row, %{
+          outcome: outcome,
+          message_id: message && message.id,
+          rfc_message_id: rfc,
+          alert_jobs: jobs
+        })
       )
 
-    answer(outcome, message && message.id, message && message.conversation_id)
+    outcome
+    |> answer(message && message.id, message && message.conversation_id)
+    |> Map.put(:alert_jobs, jobs)
   end
+
+  defp with_jobs({outcome, message, rfc}), do: {outcome, message, rfc, nil}
+  defp with_jobs({_outcome, _message, _rfc, _jobs} = read), do: read
 
   defp outcome(_scope, nil, _raw, _now), do: {:unknown_address, nil, nil}
   defp outcome(_scope, _channel, nil, _now), do: {:unreadable, nil, nil}
@@ -184,14 +205,28 @@ defmodule Core.Inbound do
         {:gmail_confirmation, nil, mail.message_id}
 
       :no ->
-        key = key(mail, raw)
-        org = Scope.organisation_id(scope)
-
-        case ConversationStore.message_by_key(org, key) do
-          nil -> land(scope, channel, raw, mail, key, now)
-          held -> {:duplicate, held, mail.message_id}
+        case Alerts.read(mail) do
+          {:ok, alert} -> alert(scope, channel, alert, mail, now)
+          :no -> conversation(scope, channel, raw, mail, now)
         end
     end
+  end
+
+  defp conversation(scope, channel, raw, mail, now) do
+    key = key(mail, raw)
+    org = Scope.organisation_id(scope)
+
+    case ConversationStore.message_by_key(org, key) do
+      nil -> land(scope, channel, raw, mail, key, now)
+      held -> {:duplicate, held, mail.message_id}
+    end
+  end
+
+  # AQ-12 §7: an alert gives pool jobs, never a conversation.
+  defp alert(scope, channel, alert, mail, now) do
+    if Store.alert_read?(Scope.organisation_id(scope), mail.message_id),
+      do: {:duplicate, nil, mail.message_id, 0},
+      else: {:landed, nil, mail.message_id, AlertJobs.take(scope, channel, alert.jobs, now)}
   end
 
   defp land(scope, channel, raw, mail, key, now) do

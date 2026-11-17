@@ -3,7 +3,7 @@ defmodule Data.Repo.Migrations.CreateNotificationGroups do
 
   @moduledoc """
   What a notification is about, for the chips and (P8) the preferences
-  (AQ-02 §5.2; mCart's). **Data, seeded** (`Data.Seeds.Notifications`):
+  (AQ-02 §5.2; tCart's). **Data, seeded** (`Data.Seeds.Notifications`):
   a later phase adds its group as a seed row, not a migration. P2 seeds
   `tasks`.
   """

@@ -1,0 +1,23 @@
+Message-ID: <brief-88213.20261110@e.fiverr.com>
+Date: Tue, 10 Nov 2026 08:30:00 +0000
+From: Fiverr <noreply@e.fiverr.com>
+To: Tanweer <tanweer@example.com>
+Subject: You've been invited to a new Brief: Go microservice for payment webhooks
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi tanweer_dev,
+
+A buyer is looking for a seller like you. Send your offer within 24 hours.
+
+Go microservice for payment webhooks
+Budget: $300 - $600
+Delivery: 7 days
+
+"We need a small Go service that receives Stripe and PayPal webhooks,
+verifies them and writes events to Postgres."
+
+See the brief: https://www.fiverr.com/briefs/88213
+
+Fiverr (a made-up notice for AutoQare's tests)

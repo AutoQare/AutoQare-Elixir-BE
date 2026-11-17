@@ -47,7 +47,7 @@ defmodule ApiExt.PanelRoutesTest do
     assert keys(golang) == ~w(customer cvs id matched teams title)
     assert golang["teams"] == [%{"id" => c.backend.id, "name" => "Backend squad"}]
 
-    assert call(c.token, :get, "/v1/context", %{"site" => "indeed"}).status == 422
+    assert call(c.token, :get, "/v1/context", %{"site" => "monster"}).status == 422
   end
 
   test "GET /jobs/lookup: §11.3's lookup", c do
@@ -267,7 +267,7 @@ defmodule ApiExt.PanelRoutesTest do
 
     assert stale.status == 200
 
-    assert call(c.token, :get, "/v1/config", %{"site" => "indeed"}).status == 422
+    assert call(c.token, :get, "/v1/config", %{"site" => "monster"}).status == 422
   end
 
   test "POST /health: 204; off the contract 422", c do

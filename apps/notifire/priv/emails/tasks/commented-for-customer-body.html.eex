@@ -1,0 +1,6 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= quoted(@body) %>
+<%= facts(@facts) %>
+<%= button("Reply on the task", @url) %>
+<%= link(@url) %>

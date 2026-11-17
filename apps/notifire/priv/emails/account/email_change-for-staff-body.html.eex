@@ -1,0 +1,8 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph("Someone asked to move an AutoQare account to this address. Until you confirm it, nothing changes and the old address still signs in.") %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Confirm this address", @url) %>
+<%= link(@url) %>
+<%= paragraph("The link lasts a day. If this wasn’t you, don’t follow it.") %>

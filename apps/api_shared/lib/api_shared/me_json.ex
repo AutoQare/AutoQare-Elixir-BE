@@ -90,7 +90,8 @@ defmodule ApiShared.MeJSON do
       quiet_hours_start: s.quiet_hours_start,
       quiet_hours_end: s.quiet_hours_end,
       digest_time: s.digest_time,
-      digest_on: s.digest_on
+      digest_frequency: s.digest_frequency,
+      snoozed_until: s.snoozed_until
     }
   end
 end

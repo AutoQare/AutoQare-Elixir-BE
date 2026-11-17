@@ -35,7 +35,8 @@ defmodule ApiShared.MeControllerTest do
                "quiet_hours_start" => nil,
                "quiet_hours_end" => nil,
                "digest_time" => "08:00:00",
-               "digest_on" => true
+               "digest_frequency" => "daily",
+               "snoozed_until" => nil
              },
              "organisation" => %{
                "id" => org_id,
@@ -92,7 +93,10 @@ defmodule ApiShared.MeControllerTest do
 
   test "PUT /me/settings answers the settings", %{admin: admin} do
     conn =
-      request(build(:put, "/v1/me/settings", %{theme: "dark", digest_on: false}) |> authed(admin))
+      request(
+        build(:put, "/v1/me/settings", %{theme: "dark", digest_frequency: "weekly"})
+        |> authed(admin)
+      )
 
     assert conn.status == 200
 
@@ -101,11 +105,17 @@ defmodule ApiShared.MeControllerTest do
              "quiet_hours_start" => nil,
              "quiet_hours_end" => nil,
              "digest_time" => "08:00:00",
-             "digest_on" => false
+             "digest_frequency" => "weekly",
+             "snoozed_until" => nil
            }
 
     assert request(build(:put, "/v1/me/settings", %{theme: "neon"}) |> authed(admin)).status ==
              422
+
+    # AQ-10B §11.4: daily · weekly · off, nothing else.
+    bad = request(build(:put, "/v1/me/settings", %{digest_frequency: "hourly"}) |> authed(admin))
+    assert bad.status == 422
+    assert body(bad)["error"]["details"]["digest_frequency"]
   end
 
   test "POST /me/password: 204, 422 on the field, 422 too weak", %{admin: admin} do
@@ -141,7 +151,8 @@ defmodule ApiShared.MeControllerTest do
              |> authed(admin)
            ).status == 202
 
-    [job] = all_enqueued(worker: Notifire.Workers.EmailChangeWorker)
+    [job] =
+      for j <- all_enqueued(worker: Notifire.Workers.EmailChangeWorker), j.args["secret"], do: j
 
     assert request(
              build(:post, "/v1/me/email/confirm", %{token: job.args["secret"]})

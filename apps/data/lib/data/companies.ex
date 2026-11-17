@@ -44,29 +44,21 @@ defmodule Data.Companies do
   end
 
   @doc """
-  The picker (AQ-03 §7.1): at most 20 companies by name; `q` matches the
-  normalised name by prefix, substring or trigram.
+  The picker (AQ-03 §7.1): at most 20 companies by name, narrowed by
+  `where` (the list's `$where`, `Data.Filters.Companies`: `q`): `{:ok,
+  companies}`, or the 422 `invalid_filter`.
   """
-  @spec search(binary(), String.t() | nil) :: [Company.t()]
-  def search(organisation_id, q) do
-    query =
+  @spec search(binary(), term()) :: {:ok, [Company.t()]} | {:error, term()}
+  def search(organisation_id, where) do
+    base =
       from(c in Company,
         where: c.organisation_id == ^organisation_id,
         order_by: [asc: c.name_normalized, asc: c.id],
         limit: 20
       )
 
-    case Company.normalize(q || "") do
-      "" ->
-        Repo.all(query)
-
-      qn ->
-        like = "%" <> escape_like(qn) <> "%"
-
-        query
-        |> where([c], like(c.name_normalized, ^like) or fragment("? % ?", c.name_normalized, ^qn))
-        |> Repo.all()
-    end
+    with {:ok, query} <- Data.Filters.where(base, Data.Filters.Companies, where),
+         do: {:ok, Repo.all(query)}
   end
 
   @doc """
@@ -102,6 +94,14 @@ defmodule Data.Companies do
   @spec update(Company.t(), map()) :: {:ok, Company.t()} | {:error, Ecto.Changeset.t()}
   def update(%Company{} = company, attrs) do
     with {:ok, updated} <- company |> Company.changeset(attrs) |> Repo.update(),
+         do: {:ok, preload_all(updated)}
+  end
+
+  @doc "Sets (or, with `nil`, clears) the company's time zone and its source (AQ-10 §6.3)."
+  @spec put_zone(Company.t(), String.t() | nil, atom() | nil) ::
+          {:ok, Company.t()} | {:error, Ecto.Changeset.t()}
+  def put_zone(%Company{} = company, zone, source) do
+    with {:ok, updated} <- company |> Company.zone_changeset(zone, source) |> Repo.update(),
          do: {:ok, preload_all(updated)}
   end
 

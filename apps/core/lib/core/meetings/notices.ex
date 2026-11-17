@@ -2,8 +2,9 @@ defmodule Core.Meetings.Notices do
   @moduledoc """
   Who is told about a meeting (AQ-06 §8.3, §11.6), each row ensured by its
   dedupe key and worded in the recipient's zone; the seam plans its
-  deliveries (AQ-08 §7.1). **A customer without a portal account gets
-  none** (they have no bell).
+  deliveries (AQ-08 §7.1). **A customer without a portal account has no
+  bell**: since P10b they are mailed the scheduled, changed and tomorrow
+  notices with the `.ics` (`Core.Notifications.CustomerMail`, QP10b-2).
 
   | Kind | Who | Dedupe |
   |---|---|---|
@@ -11,6 +12,11 @@ defmodule Core.Meetings.Notices do
   | `meetings.day_before` | the 24 h reminder (AQ-08 QP8-4: with email), to the same people | `meeting:<id>:remind:1440:<starts_at>` |
   | `meetings.reminder` | the 1 h and 10 min reminders, to the same people; passes quiet hours | `meeting:<id>:remind:<offset>:<starts_at>` |
   | `meetings.proposed` | an invitation's proposal (AQ-09 §11.4), to the lead's owner alone | `meeting:<id>:proposed:<sequence>` (the invitation's) |
+  | `meetings.clash` | a meeting saved over another of the customer's: the owner and staff attendees, not the actor (AQ-10B §5.5 M7) | `meeting:<id>:clash:<sequence>` |
+  | `meetings.unconfirmed` · `meetings.log_outcome` | the scans' (`Core.Notifications.Scans`) | — |
+
+  `scheduled` and `changed` pass quiet hours when the meeting is within 24
+  hours (AQ-10B §5.5 M1).
 
   **The emails of `scheduled` and `changed` carry the invite** (AQ-08
   §11.4): the meeting's `.ics` from `Core.Meetings.Ics`, `METHOD:REQUEST`,
@@ -21,8 +27,9 @@ defmodule Core.Meetings.Notices do
   names, else "The team".
   """
 
-  alias Core.Meetings.{Ics, Words}
+  alias Core.Meetings.{Ics, Sheet, Words}
   alias Core.Notifications
+  alias Core.Notifications.CustomerMail
   alias Core.Realtime
   alias Core.Tasks.Person
   alias Data.Accounts
@@ -57,6 +64,40 @@ defmodule Core.Meetings.Notices do
           else: "#{about(meeting)} moved to #{Words.at(meeting.starts_at, zone)}"
       end
     )
+  end
+
+  @doc """
+  `meetings.clash` (AQ-10B §5.5 M7) when a meeting is saved over another
+  of the customer's (`Core.Meetings.Sheet.clash_for/5` decides, and words
+  it): the owner and staff attendees, never the actor.
+  """
+  @spec clash(Scope.t(), map(), map()) :: list()
+  def clash(scope, lead, meeting) do
+    case Sheet.clash_for(
+           scope,
+           lead,
+           meeting.starts_at,
+           meeting.ends_at,
+           meeting.id
+         ) do
+      %{words: words} -> clash_told(scope, meeting, words)
+      nil -> []
+    end
+  end
+
+  defp clash_told(scope, meeting, words) do
+    for {user_id, _zone, false} <- recipients(meeting), user_id != Scope.user_id(scope) do
+      ensure(
+        scope,
+        meeting,
+        user_id,
+        "meetings.clash",
+        "meeting:#{meeting.id}:clash:#{meeting.sequence}",
+        title: "#{about(meeting)} clashes: #{words}",
+        actor: nil,
+        link: link(meeting, user_id)
+      )
+    end
   end
 
   @doc """
@@ -126,15 +167,60 @@ defmodule Core.Meetings.Notices do
     dedupe = "meeting:#{meeting.id}:remind:#{offset}:#{DateTime.to_iso8601(meeting.starts_at)}"
     kind = if offset == 1440, do: "meetings.day_before", else: "meetings.reminder"
 
-    for {user_id, zone, _customer?} <- recipients(meeting) do
-      ensure(scope, meeting, user_id, kind, dedupe,
-        title:
-          "#{about(meeting)} #{Words.before(offset)} · #{Words.clock(meeting.starts_at, zone)} " <>
-            "#{abbr(meeting.starts_at, zone)} · #{Words.platform(meeting.platform)}",
-        actor: nil,
-        link: link(meeting, user_id)
+    told =
+      for {user_id, zone, _customer?} <- recipients(meeting) do
+        ensure(scope, meeting, user_id, kind, dedupe,
+          title: reminder_words(meeting, offset, zone),
+          actor: nil,
+          link: link(meeting, user_id)
+        )
+      end
+
+    if offset == 1440,
+      do:
+        mail_customer(meeting, "meetings.day_before", dedupe, fn zone ->
+          reminder_words(meeting, offset, zone)
+        end)
+
+    told
+  end
+
+  defp reminder_words(meeting, offset, zone) do
+    "#{about(meeting)} #{Words.before(offset)} · #{Words.clock(meeting.starts_at, zone)} " <>
+      "#{abbr(meeting.starts_at, zone)} · #{Words.platform(meeting.platform)}"
+  end
+
+  # AQ-10B QP10b-2: a customer with no login is mailed, with the `.ics`.
+  defp mail_customer(meeting, kind, dedupe, words) do
+    customer = meeting.lead.profile.customer
+
+    lines =
+      [
+        "When: #{Words.at(meeting.starts_at, customer.timezone)}",
+        "Where: #{Words.platform(meeting.platform)}",
+        meeting.join_url && "Join: #{meeting.join_url}",
+        meeting.address && "Address: #{meeting.address}"
+      ]
+      |> Enum.reject(&(&1 in [nil, false]))
+
+    _written =
+      CustomerMail.write(
+        customer,
+        %{
+          kind: kind,
+          subject: words.(customer.timezone),
+          text: Enum.join(lines, "\n"),
+          dedupe: "mail:" <> dedupe,
+          ics:
+            if(kind == "meetings.day_before",
+              do: Ics.for_meeting(meeting, "REQUEST"),
+              else: invite(meeting)
+            )
+        },
+        Core.Clock.now()
       )
-    end
+
+    :ok
   end
 
   # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -144,17 +230,23 @@ defmodule Core.Meetings.Notices do
     names? = Teams.get_settings(meeting.lead.job.team_id).customer_sees_staff_names
 
     ics = invite(meeting)
+    soon? = DateTime.diff(meeting.starts_at, Core.Clock.now(), :second) < 86_400
 
-    for {user_id, zone, customer?} <- recipients(meeting), user_id != Scope.user_id(scope) do
-      who = who(actor, customer?, names?)
+    told =
+      for {user_id, zone, customer?} <- recipients(meeting), user_id != Scope.user_id(scope) do
+        who = who(actor, customer?, names?)
 
-      ensure(scope, meeting, user_id, kind, dedupe,
-        title: words.(who, zone),
-        actor: if(customer? and not names?, do: nil, else: actor),
-        link: link(meeting, user_id),
-        ics: ics
-      )
-    end
+        ensure(scope, meeting, user_id, kind, dedupe,
+          title: words.(who, zone),
+          actor: if(customer? and not names?, do: nil, else: actor),
+          link: link(meeting, user_id),
+          ics: ics,
+          passes: if(soon?, do: true)
+        )
+      end
+
+    mail_customer(meeting, kind, dedupe, &words.(who(nil, true, names?), &1))
+    told
   end
 
   defp who(nil, _customer?, _names?), do: "The team"
@@ -219,7 +311,8 @@ defmodule Core.Meetings.Notices do
         title: opts[:title],
         link_path: opts[:link],
         dedupe_key: dedupe,
-        ics: opts[:ics]
+        ics: opts[:ics],
+        passes_quiet_hours: opts[:passes]
       })
 
     if row.is_new,

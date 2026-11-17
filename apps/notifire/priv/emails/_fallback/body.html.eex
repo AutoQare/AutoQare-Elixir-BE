@@ -1,0 +1,6 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= if @body do %><%= paragraph(@body) %><% end %>
+<%= facts(@facts) %>
+<%= button("Open AutoQare", @url) %>
+<%= link(@url) %>

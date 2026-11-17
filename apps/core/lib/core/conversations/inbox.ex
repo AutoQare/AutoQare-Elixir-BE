@@ -38,7 +38,7 @@ defmodule Core.Conversations.Inbox do
 
   alias Core.Audit
   alias Core.Conversations
-  alias Core.Conversations.{Eml, Match, Notices, Record, Tree}
+  alias Core.Conversations.{Eml, Match, Notices, Platforms, Record, Tree}
   alias Core.Leads
   alias Core.Media
   alias Core.Meetings.Proposals
@@ -301,12 +301,16 @@ defmodule Core.Conversations.Inbox do
           (lead && lead.profile.customer_id) || sender.customer_id ||
             (channel && channel.customer_id),
         channel_id: channel && channel.id,
-        platform: :email,
+        platform: platform(mail),
         subject: mail.subject
       })
 
     c
   end
+
+  # AQ-12 §6: Fiverr's notices are Fiverr conversations; any other mail is email.
+  defp platform(%{from: {_name, address}}),
+    do: if(Platforms.platform(address) == :fiverr, do: :fiverr, else: :email)
 
   # §7.2: by hand with `lead_id`; else AQ-09 §7's rules (`Match.link/5`).
   defp links(scope, c, lead, sender, mail, channel, now) do

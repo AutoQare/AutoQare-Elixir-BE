@@ -1,6 +1,6 @@
 defmodule Data.Tasks.History do
   @moduledoc """
-  One changed field of a task (AQ-02 §5.1; mCart's): values as stored,
+  One changed field of a task (AQ-02 §5.1; tCart's): values as stored,
   labels as they read on the day, grouped by `change_group_id`.
   """
 

@@ -16,6 +16,7 @@ defmodule Core.Customers.Documents do
   alias Core.Customers
   alias Core.Customers.Profiles
   alias Core.Media
+  alias Core.Notifications.Profiles, as: ProfileNotices
   alias Data.Customers.Document
   alias Data.Customers.Profile
   alias Data.Documents, as: Store
@@ -55,7 +56,10 @@ defmodule Core.Customers.Documents do
          :ok <- Access.why_not(scope, :create, {:document, %{profile: profile}}),
          {:ok, source} <- source(scope, params) do
       attrs = params |> Map.take(~w(kind label)) |> Map.put("profile_id", profile.id)
-      Customers.commit(fn -> insert(scope, attrs, source, now) end)
+
+      Customers.commit(fn ->
+        scope |> insert(attrs, source, now) |> told(scope, profile, now)
+      end)
     end
   end
 
@@ -78,7 +82,9 @@ defmodule Core.Customers.Documents do
         "supersedes_document_id" => old.id
       }
 
-      Customers.commit(fn -> insert_version(scope, old, attrs, source, now) end)
+      Customers.commit(fn ->
+        scope |> insert_version(old, attrs, source, now) |> told(scope, old.profile, now)
+      end)
     end
   end
 
@@ -88,6 +94,16 @@ defmodule Core.Customers.Documents do
       {:ok, Store.reload(document)}
     end
   end
+
+  # AQ-10B §5.7 CP1, CP2: a document added, by staff or by the customer.
+  defp told({:ok, document}, scope, profile, now) do
+    profile = Data.Repo.preload(profile, [:customer, :profile_members])
+    what = "a document on “#{profile.title}”: #{document.label || document.kind}"
+
+    {:ok, document, ProfileNotices.changed(scope, profile.customer, profile, what, now)}
+  end
+
+  defp told(error, _scope, _profile, _now), do: error
 
   # The superseded row held the default: the new version takes it.
   defp follow_default(%Document{profile: profile, id: id} = old, document) do

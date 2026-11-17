@@ -15,10 +15,18 @@ defmodule Core.Realtime do
   came into the team's triage or left it) and `meeting_changed {lead,
   meeting}` on `customer:<id>` too.
 
+  AQ-10 §11.4 adds `observation_added {kind, id}` (a company or a
+  contact) on `team:<id>` for each team that touches the subject, so an
+  open Behaviour page or company page re-reads its map.
+
   AQ-07 §11.4 adds `approval_changed {approval, lead}` (`lead` `null` for a
   profile's) on `team:<id>` and, when the customer holds a slot of a
   submitted one, `customer:<id>`; a change that writes the lead's ledger
   sends `event_added` on `lead:<id>`. The nav's count follows it.
+
+  AQ-12 §11.4 adds `import_progress {import_id, state, progress}` on
+  `team:<id>`: each background step of an import (read, the dry run, the
+  import, undo) as it moves, so Data › Import follows it live.
 
   `team_settings_updated` makes an open board re-read: a member's view of
   their peers' tasks, and the names a customer reads, follow a team's
@@ -170,6 +178,19 @@ defmodule Core.Realtime do
         else: []
       )
   end
+
+  @doc "An observation of a company or contact (AQ-10 §11.4): `team:`, `{kind, id}`."
+  @spec observation_added(binary(), {:company | :contact, binary()}) ::
+          {String.t(), String.t(), map()}
+  def observation_added(team_id, {kind, id}),
+    do: {"team:" <> team_id, "observation_added", %{kind: Atom.to_string(kind), id: id}}
+
+  @doc "An import moved (AQ-12 §11.4): `team:`, `{import_id, state, progress}`."
+  @spec import_progress(map()) :: {String.t(), String.t(), map()}
+  def import_progress(%{id: id, team_id: team_id, state: state, progress: progress}),
+    do:
+      {"team:" <> team_id, "import_progress",
+       %{import_id: id, state: to_string(state), progress: progress}}
 
   @doc "A team's triage changed (AQ-06 §11.6): `team:`, `{team}`."
   @spec triage_changed(binary()) :: {String.t(), String.t(), map()}

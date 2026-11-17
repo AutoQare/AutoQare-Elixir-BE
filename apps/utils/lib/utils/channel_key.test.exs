@@ -114,4 +114,31 @@ defmodule Utils.ChannelKeyTest do
     assert ChannelKey.platform(nil) == nil
     assert ChannelKey.platform("nonsense") == nil
   end
+
+  describe "Indeed: indeed:{email} (AQ-12 §11.4)" do
+    for handle <- [
+          "tanweer.indeed@example.com",
+          "Tanweer.Indeed@Example.COM",
+          "  tanweer.indeed@example.com  ",
+          "mailto:tanweer.indeed@example.com"
+        ] do
+      test "#{handle}" do
+        assert ChannelKey.key(:indeed, unquote(handle)) == "indeed:tanweer.indeed@example.com"
+        assert ChannelKey.key("indeed", unquote(handle)) == "indeed:tanweer.indeed@example.com"
+      end
+    end
+
+    test "what isn't an email has no key, and a bare email is no key of its own" do
+      assert ChannelKey.key(:indeed, "https://www.indeed.com/cmp/acme") == nil
+      assert ChannelKey.key(:indeed, "Tanweer") == nil
+      assert ChannelKey.key(:indeed, "") == nil
+      assert ChannelKey.key(:indeed, nil) == nil
+      assert ChannelKey.key("tanweer.indeed@example.com") == nil
+      assert ChannelKey.key(:linkedin, "tanweer.indeed@example.com") == nil
+    end
+
+    test "the platform it names" do
+      assert ChannelKey.platform("indeed:tanweer.indeed@example.com") == "indeed"
+    end
+  end
 end

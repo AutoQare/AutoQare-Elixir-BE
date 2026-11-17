@@ -4,7 +4,7 @@ defmodule Data.Repo.Migrations.CreatePipelineVersions do
   @moduledoc """
   A version of one of the organisation's two pipelines (AQ-04A §5.1, §9,
   QP4a-2): `employment` or `freelance`, numbered from 1. **The newest number
-  is the live one**; a lead keeps the version it started on (mCart's
+  is the live one**; a lead keeps the version it started on (tCart's
   stage templates). Version 1 of each is written from the code's defaults
   by `Core.Leads.Pipelines.ensure/2`; every save in Settings › Pipelines is
   the next number. Append-only, so no `updated_at`.

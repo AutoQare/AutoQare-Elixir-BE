@@ -2,7 +2,7 @@ defmodule Data.Repo.Migrations.CreateTaskComments do
   use Ecto.Migration
 
   @moduledoc """
-  Comments on a task (AQ-02 §5.1; mCart's). Each is **for the team only**
+  Comments on a task (AQ-02 §5.1; tCart's). Each is **for the team only**
   (`is_staff_only`) or seen by the customer; a customer never writes a
   staff-only one (`Core.Tasks.Comments`). Replies are their own table (the
   next-but-one migration), so a reply to a reply has nowhere to be stored.

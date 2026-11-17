@@ -9,8 +9,10 @@ defmodule ApiTeam.InvitationController do
   action_fallback ApiShared.FallbackController
 
   def index(conn, params) do
-    with {:ok, invitations} <- Invitations.list(conn.assigns.scope, params) do
-      render(conn, :index, invitations: invitations, now: Clock.now())
+    now = Clock.now()
+
+    with {:ok, invitations} <- Invitations.list(conn.assigns.scope, params, now) do
+      render(conn, :index, invitations: invitations, now: now)
     end
   end
 

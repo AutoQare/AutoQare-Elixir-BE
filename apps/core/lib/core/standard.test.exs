@@ -168,6 +168,28 @@ defmodule Core.StandardTest do
       assert names == ["Backend squad", "Team 1", "Team 2", "Team 3"]
     end
 
+    test "accepts the open bootstrap invitation for Super Admin, as a deploy runs them" do
+      params = %{org_name: "Regbits BD", admin_email: "super-admin@example.com", admin_name: "x"}
+      {:ok, %{invitation: invitation}} = Organisation.bootstrap(params, @now)
+
+      assert {:ok, %{made: made, kept: 1}} = ensure()
+      assert "system admin super-admin@example.com" in made
+
+      org = Organisations.the_one()
+      assert Organisations.the_admin(org.id).user.email == "super-admin@example.com"
+      assert Repo.get!(Data.Invitations.Invitation, invitation.id).accepted_at
+      assert {:ok, %{made: [], kept: 41}} = ensure()
+    end
+
+    test "an open bootstrap invitation for somebody else stays theirs, with words" do
+      params = %{org_name: "Regbits BD", admin_email: "owner@example.com", admin_name: "Owner"}
+      {:ok, _bootstrapped} = Organisation.bootstrap(params, @now)
+
+      assert {:error, words} = ensure()
+      assert words =~ "has no system admin yet (its bootstrap invitation is open)"
+      assert Repo.aggregate(Data.Teams.Team, :count) == 0
+    end
+
     test "stops with words when somebody else is the system admin, and makes nothing" do
       org = organisation_fixture(%{name: "Regbits BD", slug: "regbits-bd"})
       _dawud = admin_fixture(org, %{email: "dawud@example.com"})

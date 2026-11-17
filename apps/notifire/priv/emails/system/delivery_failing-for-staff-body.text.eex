@@ -1,0 +1,12 @@
+Hi <%= @first_name || "there" %>,
+
+<%= @title %>
+<%= if @body do %>
+
+<%= @body %>
+<% end %>
+
+<%= facts_text(@facts) %>
+<%= if @url do %>Open delivery health: <%= @url %><% end %>
+
+People may be missing push or email. Check the mail and push settings.

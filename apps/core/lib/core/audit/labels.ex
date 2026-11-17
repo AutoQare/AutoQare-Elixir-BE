@@ -11,7 +11,7 @@ defmodule Core.Audit.Labels do
   `share_link_revoked`.
 
   The table here is the only place `subject_kind` strings are interpreted,
-  and the audit log is the one place a `kind + id` pair is allowed (mCart
+  and the audit log is the one place a `kind + id` pair is allowed (tCart
   §8a D3).
   """
 

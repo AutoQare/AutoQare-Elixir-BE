@@ -6,10 +6,23 @@ defmodule ApiTeam.OrgJSON do
 
   # The organisation flat, its timings nested: one shape for `GET /org` and
   # `PUT /org/settings`, as the frontend's `org` schema reads it.
+  # P10b (AQ-10B §11.4): `help_email` and `postal_address`, the emails'
+  # footer, at the top and among the settings; P11 (AQ-11 §7.4)
+  # `working_days`, the ISO weekdays that carry a daily target, the same.
   def show(%{organisation: organisation, settings: settings}) do
     organisation
     |> MeJSON.organisation()
-    |> Map.put(:settings, Map.new(OrganisationSettings.fields(), &{&1, Map.get(settings, &1)}))
+    |> Map.put(
+      :settings,
+      Map.new(
+        OrganisationSettings.fields() ++
+          OrganisationSettings.texts() ++ OrganisationSettings.lists(),
+        &{&1, Map.get(settings, &1)}
+      )
+    )
+    |> Map.put(:help_email, settings.help_email)
+    |> Map.put(:postal_address, settings.postal_address)
+    |> Map.put(:working_days, settings.working_days)
   end
 
   def audit(%{events: events, next_cursor: cursor}) do

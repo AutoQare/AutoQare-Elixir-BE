@@ -12,7 +12,8 @@ defmodule Data.Repo.Migrations.CreateNotificationDeliveries do
     meetings' and the account's at once); inside quiet hours the window's
     end, with `deferred` set (held, never dropped, QP8-8).
   - `state` ∈ `pending · sent · skipped · failed`; `skip_reason` ∈ `read ·
-    no_target · preference_off`, set exactly when skipped; `sent_at`
+    no_target · preference_off · folded` (P10b: a push within 10 minutes of
+    another about the same lead or task, QP10b-17), set exactly when skipped; `sent_at`
     exactly when sent. A failure keeps its `error` (at most 500 characters,
     never a body) and counts `attempts`; the third makes it `failed`.
   - `ics`: the meeting's calendar file, frozen at write, on the email row
@@ -26,7 +27,7 @@ defmodule Data.Repo.Migrations.CreateNotificationDeliveries do
 
   @channels ~w(push email extension)
   @states ~w(pending sent skipped failed)
-  @skip_reasons ~w(read no_target preference_off)
+  @skip_reasons ~w(read no_target preference_off folded)
 
   def change do
     create table(:notification_deliveries, primary_key: false) do

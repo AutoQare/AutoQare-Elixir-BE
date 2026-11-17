@@ -120,6 +120,26 @@ defmodule ApiTeam.RouterTest do
     end
   end
 
+  test "every Behaviour route of AQ-10 §11.4 exists and is authenticated" do
+    for {method, path} <- [
+          {"GET", "/v1/behaviour"},
+          {"GET", "/v1/behaviour/company/c"},
+          {"GET", "/v1/behaviour/contact/c/observations"},
+          {"POST", "/v1/observations"},
+          {"GET", "/v1/watches"},
+          {"POST", "/v1/watches"},
+          {"PATCH", "/v1/watches/w"},
+          {"DELETE", "/v1/watches/w"},
+          {"POST", "/v1/contacts/c/forget"},
+          {"POST", "/v1/companies/c/forget-people"}
+        ] do
+      assert :aq_authenticated in pipes(method, path), "#{method} #{path} is not authenticated"
+
+      conn = call(String.downcase(method) |> String.to_atom(), path)
+      assert conn.status == 401, "#{method} #{path} without a token answered #{conn.status}"
+    end
+  end
+
   test "every board route of AQ-02 §7.1 and §7.2 exists and is authenticated" do
     for {method, path} <- [
           {"GET", "/v1/notifications"},

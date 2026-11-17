@@ -201,58 +201,67 @@
     "upwork.proposals_text": {
       "on": "job",
       "css": [
-        "[data-test='ClientActivity'] li:nth-child(1) .value",
-        ".client-activity-items li:nth-child(1) .value",
+        "[data-test='ClientActivity'] li",
+        ".client-activity-items li",
         "[data-test='proposals-tier']",
         "[data-test='proposals']"
       ],
       "read": "text",
+      "match": "^proposals:?\\s*(.+)$",
       "required": true
     },
     "upwork.last_viewed_text": {
       "on": "job",
       "css": [
-        "[data-test='ClientActivity'] li:nth-child(2)",
-        ".client-activity-items li:nth-child(2)",
+        "[data-test='ClientActivity'] li",
+        ".client-activity-items li",
         "[data-test='client-last-viewed']"
       ],
       "read": "text",
+      "match": "^last viewed by client\\b",
       "required": false
     },
     "upwork.hires_text": {
       "on": "job",
-      "css": ["[data-test='ClientActivity'] li:nth-child(3)", ".client-activity-items li:nth-child(3)"],
+      "css": [
+        "[data-test='ClientActivity'] li",
+        ".client-activity-items li"
+      ],
       "read": "text",
+      "match": "^hires\\b",
       "required": false
     },
     "upwork.interviewing_text": {
       "on": "job",
       "css": [
-        "[data-test='ClientActivity'] li:nth-child(4)",
-        ".client-activity-items li:nth-child(4)",
+        "[data-test='ClientActivity'] li",
+        ".client-activity-items li",
         "[data-test='client-interviewing']"
       ],
       "read": "text",
+      "match": "^interviewing\\b",
       "required": false
     },
     "upwork.invites_text": {
       "on": "job",
       "css": [
-        "[data-test='ClientActivity'] li:nth-child(5)",
-        ".client-activity-items li:nth-child(5)",
+        "[data-test='ClientActivity'] li",
+        ".client-activity-items li",
         "[data-test='client-invites-sent']"
       ],
       "read": "text",
+      "match": "^invites sent\\b",
       "required": false
     },
     "upwork.unanswered_text": {
       "on": "job",
       "css": [
-        "[data-test='ClientActivity'] li:nth-child(6)",
-        ".client-activity-items li:nth-child(6)",
+        "[data-test='ClientActivity'] li",
+        ".client-activity-items li",
         "[data-test='client-unanswered-invites']"
       ],
       "read": "text",
+      "match": "^unanswered invites\\b",
       "required": false
     },
     "upwork.client.payment_verified": {
@@ -396,6 +405,29 @@
         ".room-header a[href*='/freelancers/']"
       ],
       "read": "href",
+      "required": false
+    },
+    "thread.other_online": {
+      "on": "thread",
+      "css": [
+        "[data-test='room-header'] [data-test='presence-online']",
+        "[data-test='room-header'] .up-presence-online",
+        "[data-test='room-header'] [data-test='online-indicator']",
+        ".room-header .presence-indicator.is-online",
+        ".up-d-room-header .online-dot"
+      ],
+      "read": "present",
+      "required": false
+    },
+    "thread.other_last_seen_text": {
+      "on": "thread",
+      "css": [
+        "[data-test='room-header'] [data-test='last-seen']",
+        "[data-test='room-header'] [data-test='presence-text']",
+        ".room-header .presence-text",
+        ".up-d-room-header .last-seen"
+      ],
+      "read": "text",
       "required": false
     },
     "messages": {

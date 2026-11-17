@@ -91,8 +91,11 @@ defmodule Core.Approvals.RemindersTest do
     # Too early: nothing.
     assert Reminders.remind(id, "due_soon", due, @now) == :early
 
-    # The worker hands the clock (now, before the window) to the rule: nothing yet.
+    # The worker hands the clock (now, before the window) to the rule: nothing yet. The clock is
+    # pinned there, so the suite holds whatever day it runs on (@due is a fixed day).
+    Core.Clock.freeze(@now)
     assert :ok = perform_job(ApprovalReminder, args.("due_soon"))
+    Core.Clock.unfreeze()
     assert told("approvals.due_soon") == []
 
     assert Reminders.remind(id, "due_soon", due, ~U[2026-11-15 18:00:00.000000Z]) == :sent

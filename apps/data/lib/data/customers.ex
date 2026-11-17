@@ -43,22 +43,39 @@ defmodule Data.Customers do
 
   @doc """
   An organisation's customers by name. Options: `team_ids` (served by any of
-  these; `:unassigned` adds the customers in no team), `status`, `q` (name or
-  email), `include_archived`.
+  these; `:unassigned` adds the customers in no team), `include_archived`.
   """
   @spec list(binary(), keyword()) :: [Customer.t()]
   def list(organisation_id, opts \\ []) do
+    organisation_id
+    |> base(opts)
+    |> Repo.all()
+    |> Enum.map(&fill/1)
+  end
+
+  @doc """
+  The customers list (`GET /customers`): the live customers `team_ids`
+  serve (`nil`: every one), by name, narrowed by `where`
+  (`Data.Filters.Customers`: `status`, `q`, `mine`; `context.user_id` is
+  *mine*'s person). `{:ok, customers}`, or the 422 `invalid_filter`.
+  """
+  @spec filtered(binary(), [binary()] | nil, term(), map()) ::
+          {:ok, [Customer.t()]} | {:error, term()}
+  def filtered(organisation_id, team_ids, where, context) do
+    query = base(organisation_id, team_ids: team_ids)
+
+    with {:ok, query} <- Data.Filters.where(query, Data.Filters.Customers, where, context),
+         do: {:ok, query |> Repo.all() |> Enum.map(&fill/1)}
+  end
+
+  defp base(organisation_id, opts) do
     from(c in Customer,
       where: c.organisation_id == ^organisation_id,
       order_by: [asc: c.display_name],
       preload: ^@preload
     )
     |> teams(Keyword.get(opts, :team_ids), Keyword.get(opts, :unassigned, false))
-    |> status(Keyword.get(opts, :status))
-    |> search(Keyword.get(opts, :q))
     |> archived(Keyword.get(opts, :include_archived, false))
-    |> Repo.all()
-    |> Enum.map(&fill/1)
   end
 
   defp teams(query, nil, _unassigned), do: query
@@ -70,17 +87,6 @@ defmodule Data.Customers do
     if unassigned?,
       do: where(query, [c], c.id in subquery(served) or c.id not in subquery(any)),
       else: where(query, [c], c.id in subquery(served))
-  end
-
-  defp status(query, nil), do: query
-  defp status(query, status), do: where(query, [c], c.status == ^status)
-
-  defp search(query, nil), do: query
-  defp search(query, ""), do: query
-
-  defp search(query, q) do
-    like = "%" <> String.replace(q, ~r/[%_\\]/, "") <> "%"
-    where(query, [c], ilike(c.display_name, ^like) or ilike(c.email, ^like))
   end
 
   defp archived(query, true), do: query

@@ -1,0 +1,7 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph("The invite is attached: add it to your calendar.") %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Open the lead", @url) %>
+<%= link(@url) %>

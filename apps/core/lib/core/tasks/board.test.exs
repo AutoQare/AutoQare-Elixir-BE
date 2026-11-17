@@ -9,10 +9,15 @@ defmodule Core.Tasks.BoardTest do
 
   import Ecto.Query, only: [from: 2]
 
+  alias Core.Dashboards.Me
   alias Core.Tasks.Board
   alias Data.TaskStages
 
   @now ~U[2026-11-10 09:00:00.000000Z]
+  @mine %{"mine" => %{"$EQUAL" => "true"}}
+  @watching %{"watching" => %{"$EQUAL" => "true"}}
+
+  defp customer(customer), do: %{"customer_id" => %{"$EQUAL" => customer.id}}
 
   setup do: board_cast_fixture()
 
@@ -38,7 +43,7 @@ defmodule Core.Tasks.BoardTest do
     step_fixture(stepped, assignee: c.fiza, title: "Shortlist")
     watched = task_fixture(hira, team: c.backend, primary: c.hira, watchers: [c.fiza])
 
-    assert {:ok, page} = Board.page(fiza, %{"team_id" => c.backend.id, "mine" => "true"}, @now)
+    assert {:ok, page} = Board.page(fiza, %{"team_id" => c.backend.id, "$where" => @mine}, @now)
     assert Enum.sort(ids(page, :todo)) == Enum.sort([mine.id, own.id, {:step, stepped.id}])
     assert ids(page, :draft) == [draft.id]
     refute given_away.id in ids(page, :todo)
@@ -55,19 +60,19 @@ defmodule Core.Tasks.BoardTest do
     assert step.step.title == "Shortlist" and step.step.position == 1 and step.step.total == 1
 
     assert {:ok, page} =
-             Board.page(fiza, %{"team_id" => c.backend.id, "watching" => "true"}, @now)
+             Board.page(fiza, %{"team_id" => c.backend.id, "$where" => @watching}, @now)
 
     assert ids(page, :todo) == [watched.id]
 
     muaz = scope_for(c.muaz)
 
     assert {:ok, %{empty: "mine"}} =
-             Board.page(muaz, %{"team_id" => c.backend.id, "mine" => "true"}, @now)
+             Board.page(muaz, %{"team_id" => c.backend.id, "$where" => @mine}, @now)
 
     assert {:ok, page} =
              Board.page(
                muaz,
-               %{"team_id" => c.backend.id, "mine" => "true", "watching" => "true"},
+               %{"team_id" => c.backend.id, "$where" => Map.merge(@mine, @watching)},
                @now
              )
 
@@ -131,7 +136,7 @@ defmodule Core.Tasks.BoardTest do
     nobody = task_fixture(hira, team: c.backend, state: :in_progress)
 
     assert {:ok, page} =
-             Board.page(scope_for(c.fiza), %{"team_id" => c.backend.id, "mine" => "true"}, @now)
+             Board.page(scope_for(c.fiza), %{"team_id" => c.backend.id, "$where" => @mine}, @now)
 
     assert [
              %{key: key, label: "Sourcing", items: [%{id: s}]},
@@ -181,7 +186,7 @@ defmodule Core.Tasks.BoardTest do
 
     team = %{"team_id" => c.backend.id}
 
-    assert {:ok, page} = Board.page(hira, Map.put(team, "sort", "due"), @now)
+    assert {:ok, page} = Board.page(hira, Map.put(team, "$order", %{"due" => "$ASC"}), @now)
     assert [first, second | _rest] = ids(page, :todo)
     assert {first, second} == {late.id, urgent.id}
     assert page.counts.overdue == 1 and page.counts.due_today == 1
@@ -190,33 +195,68 @@ defmodule Core.Tasks.BoardTest do
     assert {:ok, page} = Board.page(hira, Map.merge(team, %{"older" => "done"}), @now)
     assert ids(page, :done) == [old.id]
 
-    assert {:ok, page} = Board.page(hira, Map.put(team, "sort", "priority"), @now)
+    assert {:ok, page} = Board.page(hira, Map.put(team, "$order", %{"priority" => "$ASC"}), @now)
     assert hd(ids(page, :todo)) == urgent.id
 
     for {filter, expected} <- [
-          {%{"q" => "APP"}, [urgent.id]},
-          {%{"priority" => "low,urgent"}, [late.id, urgent.id]},
-          {%{"due" => "overdue"}, [late.id]},
-          {%{"due" => "today"}, [urgent.id]},
-          {%{"no_owner" => "true", "q" => "call"}, [late.id]}
+          {%{"q" => %{"$ILIKE" => "APP"}}, [urgent.id]},
+          {%{"priority" => %{"$IN" => ["low", "urgent"]}}, [late.id, urgent.id]},
+          {%{"due" => %{"$EQUAL" => "overdue"}}, [late.id]},
+          {%{"due" => %{"$EQUAL" => "today"}}, [urgent.id]},
+          {%{"no_owner" => %{"$EQUAL" => "true"}, "q" => %{"$ILIKE" => "call"}}, [late.id]}
         ] do
-      assert {:ok, page} = Board.page(hira, Map.merge(team, filter), @now)
+      assert {:ok, page} = Board.page(hira, Map.put(team, "$where", filter), @now)
       assert Enum.sort(ids(page, :todo)) == Enum.sort(expected), inspect(filter)
     end
 
     assert {:ok, page} =
-             Board.page(hira, Map.put(team, "customer_id", c.tanweer.id), @now)
+             Board.page(hira, Map.put(team, "$where", customer(c.tanweer)), @now)
 
     assert ids(page, :todo) == [urgent.id]
 
     assert {:error, :not_found} =
              Board.page(
                scope_for(c.bilal),
-               Map.put(team, "customer_id", c.imran.id),
+               Map.put(team, "$where", customer(c.imran)),
                @now
              )
 
     assert [%{name: "Backend squad", role: :lead}, %{name: "Frontend squad", role: :lead}] =
              page.teams
+  end
+
+  test "Mine with due today or overdue counts what the dashboard's Tasks due counts (AQ-11 §4)",
+       c do
+    hira = scope_for(c.hira)
+    fiza = scope_for(c.fiza)
+    # 23:30 in Karachi on the 10th: the organisation's day, and the dashboard's.
+    now = ~U[2026-11-10 18:30:00.000000Z]
+
+    for attrs <- [
+          [due_on: ~D[2026-11-10]],
+          [due_at: ~U[2026-11-10 18:45:00Z]],
+          [due_at: ~U[2026-11-09 09:00:00Z], state: :in_progress],
+          [due_on: ~D[2026-11-02], state: :on_hold],
+          [due_on: ~D[2026-11-10], state: :done],
+          [due_on: ~D[2026-11-12]],
+          []
+        ] do
+      task_fixture(hira, [team: c.backend, primary: c.fiza] ++ attrs)
+    end
+
+    task_fixture(fiza, team: c.backend, due_on: ~D[2026-11-10])
+    task_fixture(hira, team: c.backend, primary: c.qasim, due_on: ~D[2026-11-10])
+
+    where = %{"mine" => %{"$EQUAL" => true}, "due" => %{"$IN" => ["today", "overdue"]}}
+    assert {:ok, page} = Board.page(fiza, %{"team_id" => c.backend.id, "$where" => where}, now)
+
+    open =
+      page.columns
+      |> Enum.filter(&(&1.state in [:todo, :in_progress, :on_hold]))
+      |> Enum.flat_map(& &1.items)
+
+    assert {:ok, dashboard} = Me.build(fiza, %{"period" => "today"}, now)
+    assert dashboard.tiles.tasks_due == 5
+    assert length(open) == dashboard.tiles.tasks_due
   end
 end

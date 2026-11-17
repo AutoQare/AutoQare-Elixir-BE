@@ -1,6 +1,6 @@
 defmodule Notifire.Push do
   @moduledoc """
-  Web Push (AQ-08 §7.6, QP8-13; copied from mCart's): a payload sent to
+  Web Push (AQ-08 §7.6, QP8-13; copied from tCart's): a payload sent to
   every browser a person turned push on in one app — staff on `team`, a
   customer on `client` — encrypted for each browser (RFC 8291,
   `aes128gcm`) and signed for the push service (RFC 8292, VAPID, ES256),

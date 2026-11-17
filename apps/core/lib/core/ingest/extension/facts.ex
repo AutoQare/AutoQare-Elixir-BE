@@ -2,13 +2,14 @@ defmodule Core.Ingest.Extension.Facts do
   @moduledoc """
   The platforms' own facts (AQ-05 §10.1), **pure**: LinkedIn's applicants
   and flags and Upwork's client lines as the job's platform details
-  (`job_linkedin_details`, `job_upwork_details`), and what moves — the
+  (`job_linkedin_details`, `job_upwork_details`; AQ-12: Indeed's, YC's and
+  Wellfound's from `Core.Ingest.Extension.Sites`), and what moves — the
   applicants, the proposals, the interviews, the invites, the hires, when
   the client last looked — as the signals (`job_signals`). Only what was
   read is set.
   """
 
-  alias Core.Ingest.Extension.{Money, Read}
+  alias Core.Ingest.Extension.{Money, Read, Sites}
 
   @experience [
     {~r/^entry/i, :entry},
@@ -19,9 +20,11 @@ defmodule Core.Ingest.Extension.Facts do
 
   @doc """
   The source's details: LinkedIn's from the fields and the apply method
-  read (`easy?`), Upwork's from its `upwork` and `upwork.client` members.
+  read (`easy?`), Upwork's from its `upwork` and `upwork.client` members;
+  Indeed's, YC's and Wellfound's `Sites.details/3`; nothing for a site
+  without a table.
   """
-  @spec details(:linkedin | :upwork, map(), boolean() | nil) :: map()
+  @spec details(atom(), map(), boolean() | nil) :: map()
   def details(:linkedin, fields, easy?) do
     {count, capped} = applicants(Read.text(fields, "applicants_text"))
 
@@ -50,26 +53,78 @@ defmodule Core.Ingest.Extension.Facts do
     |> Map.reject(fn {_k, v} -> is_nil(v) end)
   end
 
+  def details(site, fields, easy?) when site in [:indeed, :yc_waas, :wellfound],
+    do: Sites.details(site, fields, easy?)
+
+  def details(_site, _fields, _easy?), do: %{}
+
   defp client(client) do
     avg = client |> Read.text("avg_rate_text") |> Money.bid()
     spent = Read.text(client, "spent_text")
-    count = &Read.integer(Read.text(client, &1))
+    count = &client_count(Read.text(client, &1), &2)
 
     %{
       is_client_payment_verified: verified(client["payment_verified"]),
       client_rating: rating(Read.text(client, "rating_text")),
-      client_reviews: count.("reviews_text"),
+      client_reviews: count.("reviews_text", :reviews),
       client_country: client |> Read.text("location_text") |> country(),
-      client_jobs_posted: count.("jobs_posted_text"),
+      client_jobs_posted: count.("jobs_posted_text", :jobs_posted),
       client_hire_rate_pct: percent(Read.text(client, "hire_rate_text")),
-      client_open_jobs: count.("open_jobs_text"),
+      client_open_jobs: count.("open_jobs_text", :open_jobs),
       client_spent_band: spent && Money.spent_band(spent),
-      client_hires: count.("hires_text"),
-      client_active_hires: count.("active_hires_text"),
+      client_hires: count.("hires_text", :hires),
+      client_active_hires: count.("active_hires_text", :active_hires),
       client_avg_hourly_minor: avg && avg.bid_minor,
       client_avg_hourly_currency: avg && avg.bid_currency,
       client_member_since_on: member_since(Read.text(client, "member_since_text"))
     }
+  end
+
+  # AQ-12C B16: each of the client's counts is the number right before its
+  # own words. A number that is the tail of a decimal ("4.81") is no count.
+  @count_words %{
+    reviews: ~r/(?<![\d.,])(\d[\d,]*)\s+reviews?\b/i,
+    open_jobs: ~r/(?<![\d.,])(\d[\d,]*)\s+open\s+jobs?\b/i,
+    jobs_posted: ~r/(?<![\d.,])(\d[\d,]*)\s+jobs?\s+posted\b/i,
+    hires: ~r/(?<![\d.,])(\d[\d,]*)\s+hires?\b(?!\s+rate)/i,
+    active_hires: ~r/(?<![\d.,])(\d[\d,]*)\s+active\b/i
+  }
+
+  @doc """
+  One of Upwork's client counts (AQ-12C B16): the number next to its own
+  words — reviews before "review", open jobs before "open job", jobs posted
+  before "job(s) posted", hires before "hire" (not "hire rate"), active
+  hires before "active". A text that is only a number is that number; one
+  with neither is nothing, since a wrong number is worse than none.
+
+      iex> Core.Ingest.Extension.Facts.client_count("4.81 of 22 reviews", :reviews)
+      22
+      iex> Core.Ingest.Extension.Facts.client_count("70% hire rate, 1 open job", :open_jobs)
+      1
+      iex> Core.Ingest.Extension.Facts.client_count("9 jobs posted", :jobs_posted)
+      9
+      iex> Core.Ingest.Extension.Facts.client_count("7 hires, 2 active", :hires)
+      7
+      iex> Core.Ingest.Extension.Facts.client_count("7 hires, 2 active", :active_hires)
+      2
+      iex> Core.Ingest.Extension.Facts.client_count("70 hire rate", :hires)
+      nil
+      iex> Core.Ingest.Extension.Facts.client_count(" 1,204 ", :reviews)
+      1204
+      iex> Core.Ingest.Extension.Facts.client_count("70% hire rate", :open_jobs)
+      nil
+  """
+  @spec client_count(String.t() | nil, atom()) :: non_neg_integer() | nil
+  def client_count(nil, _count), do: nil
+
+  def client_count(text, count) do
+    lone = Regex.run(~r/^\s*(\d[\d,]*)\s*$/, text, capture: :all_but_first)
+    near = Regex.run(Map.fetch!(@count_words, count), text, capture: :all_but_first)
+
+    case near || lone do
+      [digits] -> digits |> String.replace(",", "") |> String.to_integer()
+      nil -> nil
+    end
   end
 
   @doc """

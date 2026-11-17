@@ -24,6 +24,7 @@ defmodule Core.Jobs.Act do
   alias Core.Access
   alias Core.Audit
   alias Core.Jobs
+  alias Core.Leads.Notices, as: LeadNotices
   alias Data.JobParts
   alias Data.Jobs, as: Store
   alias Data.Jobs.Job
@@ -62,7 +63,10 @@ defmodule Core.Jobs.Act do
         last_activity_at: now
       }
 
-      Jobs.answer(scope, write(scope, "closed", job, &Store.close(&1, attrs), now), now)
+      # AQ-10B §5.3 J1: the owners of its open leads, in the same transaction.
+      told = fn -> LeadNotices.job_closed(scope, LeadStore.open_for_job(job.id), now) end
+      result = write(scope, "closed", job, &Store.close(&1, attrs), now, told)
+      Jobs.answer(scope, result, now)
     end
   end
 
@@ -152,7 +156,10 @@ defmodule Core.Jobs.Act do
           last_activity_at: now
         }
 
-        with {:ok, _job} <- write(scope, "closed", job, &Store.close(&1, attrs), now), do: :ok
+        told = fn -> LeadNotices.job_closed(scope, LeadStore.open_for_job(job.id), now) end
+
+        with {:ok, _job} <- write(scope, "closed", job, &Store.close(&1, attrs), now, told),
+             do: :ok
     end
   end
 
@@ -170,7 +177,7 @@ defmodule Core.Jobs.Act do
 
   # One verb, one transaction: the change and its audit row with the
   # status and archive columns before and after.
-  defp write(scope, action, job, change, now) do
+  defp write(scope, action, job, change, now, told \\ fn -> [] end) do
     Repo.transaction(fn ->
       case change.(job) do
         {:ok, updated} ->
@@ -181,13 +188,21 @@ defmodule Core.Jobs.Act do
               now: now
             )
 
-          updated
+          {updated, told.()}
 
         {:error, reason} ->
           Repo.rollback(reason)
       end
     end)
+    |> sent()
   end
+
+  defp sent({:ok, {value, events}}) do
+    :ok = Core.Notifications.send_events(events)
+    {:ok, value}
+  end
+
+  defp sent(other), do: other
 
   defp verb_snapshot(job), do: Audit.snapshot(job, ~w(status close_reason closed_at archived_at)a)
 
@@ -216,7 +231,11 @@ defmodule Core.Jobs.Act do
          {:ok, into} <- Jobs.fetch(scope, :read, into_id),
          :ok <- if(into.id == from.id, do: invalid("into_job_id", "is this job"), else: :ok),
          :ok <- no_lead_on_both(from, into) do
-      Jobs.answer(scope, Repo.transaction(fn -> merge_into(scope, from, into, now) end), now)
+      Jobs.answer(
+        scope,
+        Repo.transaction(fn -> merge_into(scope, from, into, now) end) |> sent(),
+        now
+      )
     end
   end
 
@@ -254,6 +273,8 @@ defmodule Core.Jobs.Act do
   defp merge_into(scope, from, into, now) do
     fill = fill(from, into)
 
+    open = LeadStore.open_for_job(from.id)
+
     with {:ok, survivor} <- Store.fill(into, fill),
          :ok <- JobParts.move_parts(from, survivor),
          moved = LeadStore.move_to_job(from.id, survivor.id),
@@ -285,11 +306,14 @@ defmodule Core.Jobs.Act do
           now: now
         )
 
-      survivor
+      # AQ-10B §5.3 J2: the owners of the open leads that moved.
+      {survivor, LeadNotices.job_merged(scope, open, survivor_for_words(survivor))}
     else
       {:error, reason} -> Repo.rollback(reason)
     end
   end
+
+  defp survivor_for_words(survivor), do: Repo.preload(survivor, :company)
 
   @doc false
   # The survivor's empty columns, from the merged job: `%{field => value}`.

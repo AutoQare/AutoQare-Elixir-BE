@@ -194,7 +194,9 @@ defmodule Core.Leads.Act do
 
     {[
        Notices.moved(scope, moved, event, stage.name),
-       Notices.customer_update(scope, moved, event, :applied)
+       Notices.customer_update(scope, moved, event, :applied),
+       # AQ-10B §5.3 L8: the customer said *I applied* in the portal.
+       if(Scope.customer?(scope), do: Notices.customer_applied(scope, moved, event), else: [])
      ], "lead_moved"}
   end
 

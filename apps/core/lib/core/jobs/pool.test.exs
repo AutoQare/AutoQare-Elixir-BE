@@ -1,10 +1,10 @@
 defmodule Core.Jobs.PoolTest do
   @moduledoc """
-  `GET /jobs` (AQ-03 §7.1): each filter against a hand count — money
+  `GET /jobs` (AQ-03 §7.1, AQ-11B): each `$where` field against a hand count — money
   annualised across periods and never across currencies, a project only
   against a project; posted within; a country or worldwide; the search;
   archived; `suggested_for` best first without the dismissed — the three
-  sorts by keyset, and the 422s.
+  `$order` sorts by keyset, and the 422s.
   """
 
   use Core.CoreCase, async: true
@@ -71,6 +71,8 @@ defmodule Core.Jobs.PoolTest do
     Map.merge(cast, %{scope: scope, jobs: jobs, tux: tux})
   end
 
+  defp where(where, extra \\ %{}), do: Map.put(extra, "$where", where)
+
   defp titles(scope, params) do
     {:ok, %{items: items}} = Pool.list(scope, in_team(params, scope), @now)
     Enum.map(items, & &1.title)
@@ -85,40 +87,43 @@ defmodule Core.Jobs.PoolTest do
                "Café ordering app"
              ]
 
-    assert titles(c.scope, %{"archived" => "true"}) == ["Old role"]
+    assert titles(c.scope, where(%{"archived" => %{"$EQUAL" => "true"}})) == ["Old role"]
+    assert length(titles(c.scope, where(%{"archived" => %{"$EQUAL" => false}}))) == 4
   end
 
   test "money ≥ $4,000 a month: an hourly $45 job is in, a £-only job and a fixed budget are not",
        c do
-    params = %{"money_min_minor" => "400000", "currency" => "usd", "period" => "month"}
-    assert titles(c.scope, params) == ["Go Engineer", "Elixir Developer"]
+    money = %{"min_minor" => "400000", "currency" => "usd", "period" => "month"}
+
+    assert titles(c.scope, where(%{"money" => %{"$GTE" => money}})) == [
+             "Go Engineer",
+             "Elixir Developer"
+           ]
 
     # $5,500 a month is 6.6M a year; the hourly top is 6,000 × 2080 = 12.48M.
-    assert titles(c.scope, %{params | "money_min_minor" => "600000"}) == ["Elixir Developer"]
+    assert titles(c.scope, where(%{"money" => %{"$GTE" => %{money | "min_minor" => "600000"}}})) ==
+             ["Elixir Developer"]
   end
 
   test "a project budget compares only with project budgets", c do
-    assert titles(c.scope, %{
-             "money_min_minor" => "100000",
-             "currency" => "USD",
-             "period" => "project"
-           }) ==
+    money = %{"min_minor" => "100000", "currency" => "USD", "period" => "project"}
+
+    assert titles(c.scope, where(%{"money" => %{"$GTE" => money}})) ==
              ["Café ordering app"]
   end
 
   test "the money filter needs all three; sort by money needs a currency", c do
-    assert Pool.list(c.scope, in_team(%{"money_min_minor" => "1"}, c.scope), @now) ==
-             {:error,
-              {:invalid,
-               %{
-                 "currency" => ["is needed with the money filter"],
-                 "period" => ["is needed with the money filter"]
-               }}}
+    assert Pool.list(
+             c.scope,
+             in_team(where(%{"money" => %{"$GTE" => %{"min_minor" => "1"}}}), c.scope),
+             @now
+           ) ==
+             {:error, {:invalid_filter, %{"money" => ["has a value this filter can't take"]}}}
 
-    assert Pool.list(c.scope, in_team(%{"sort" => "money"}, c.scope), @now) ==
+    assert Pool.list(c.scope, in_team(%{"$order" => %{"money" => "$DESC"}}, c.scope), @now) ==
              {:error, {:invalid, %{"currency" => ["is needed to sort by money"]}}}
 
-    assert titles(c.scope, %{"sort" => "money", "currency" => "USD"}) ==
+    assert titles(c.scope, %{"$order" => %{"money" => "$DESC"}, "currency" => "USD"}) ==
              [
                "Elixir Developer",
                "Go Engineer",
@@ -128,47 +133,68 @@ defmodule Core.Jobs.PoolTest do
   end
 
   test "posted within: posted_on, else first seen", c do
-    assert titles(c.scope, %{"posted_within" => "1"}) == ["Go Engineer"]
+    assert titles(c.scope, where(%{"posted_within" => %{"$EQUAL" => "1"}})) == ["Go Engineer"]
 
-    assert titles(c.scope, %{"posted_within" => "7"}) == [
+    assert titles(c.scope, where(%{"posted_within" => %{"$EQUAL" => 7}})) == [
              "Go Engineer",
              "Staff Engineer (remote work)"
            ]
 
-    assert Pool.list(c.scope, in_team(%{"posted_within" => "5"}, c.scope), @now) ==
-             {:error, {:invalid, %{"posted_within" => ["is one of 1, 3, 7, 14 or 30 days"]}}}
+    assert Pool.list(
+             c.scope,
+             in_team(where(%{"posted_within" => %{"$EQUAL" => "5"}}), c.scope),
+             @now
+           ) ==
+             {:error,
+              {:invalid_filter, %{"posted_within" => ["has a value this filter can't take"]}}}
   end
 
   test "a country: the job lists it, or is remote worldwide", c do
-    assert titles(c.scope, %{"country" => "pk"}) == ["Go Engineer", "Elixir Developer"]
-    assert titles(c.scope, %{"country" => "DE"}) == ["Go Engineer"]
-  end
-
-  test "comma lists of the vocabulary; a value off it is 422", c do
-    assert titles(c.scope, %{"source" => "upwork"}) == ["Elixir Developer", "Café ordering app"]
-
-    assert titles(c.scope, %{"remote_scope" => "region,country_list"}) == [
-             "Elixir Developer",
-             "Staff Engineer (remote work)"
+    assert titles(c.scope, where(%{"country" => %{"$EQUAL" => "pk"}})) == [
+             "Go Engineer",
+             "Elixir Developer"
            ]
 
-    assert titles(c.scope, %{"engagement" => "freelance_fixed"}) == ["Café ordering app"]
+    assert titles(c.scope, where(%{"country" => "DE"})) == ["Go Engineer"]
+  end
 
-    assert Pool.list(c.scope, in_team(%{"source" => "monster"}, c.scope), @now) ==
-             {:error, {:invalid, %{"source" => ["has a value that is not one of the list"]}}}
+  test "the vocabulary's keys, one or any of them; a value off it is 422", c do
+    assert titles(c.scope, where(%{"source" => %{"$EQUAL" => "upwork"}})) == [
+             "Elixir Developer",
+             "Café ordering app"
+           ]
+
+    assert titles(c.scope, where(%{"remote_scope" => %{"$IN" => ["region", "country_list"]}})) ==
+             [
+               "Elixir Developer",
+               "Staff Engineer (remote work)"
+             ]
+
+    assert titles(c.scope, where(%{"engagement" => "freelance_fixed"})) == ["Café ordering app"]
+
+    assert Pool.list(
+             c.scope,
+             in_team(where(%{"source" => %{"$IN" => ["monster"]}}), c.scope),
+             @now
+           ) ==
+             {:error, {:invalid_filter, %{"source" => ["has a value this filter can't take"]}}}
+
+    assert {:error, {:invalid_filter, %{"title" => _}}} =
+             Pool.list(c.scope, in_team(where(%{"title" => "Go"}), c.scope), @now)
   end
 
   test "q: title or company, accent- and case-insensitive, with a typo", c do
-    assert titles(c.scope, %{"q" => "elixir"}) == ["Elixir Developer"]
-    assert titles(c.scope, %{"q" => "CAFE"}) == ["Café ordering app"]
-    assert titles(c.scope, %{"q" => "tuxcare"}) == ["Staff Engineer (remote work)"]
-    assert titles(c.scope, %{"q" => "elixr"}) == ["Elixir Developer"]
+    q = &where(%{"q" => %{"$ILIKE" => &1}})
+    assert titles(c.scope, q.("elixir")) == ["Elixir Developer"]
+    assert titles(c.scope, q.("CAFE")) == ["Café ordering app"]
+    assert titles(c.scope, q.("%tuxcare%")) == ["Staff Engineer (remote work)"]
+    assert titles(c.scope, q.("elixr")) == ["Elixir Developer"]
   end
 
   test "skills: the job has any of them", c do
     go = skill_fixture(c.org, name: "Go")
     tagged = job_fixture(c.scope, title: "Tagged", skills: [{go, true}])
-    assert titles(c.scope, %{"skills" => go.id}) == [tagged.title]
+    assert titles(c.scope, where(%{"skills" => %{"$IN" => [go.id]}})) == [tagged.title]
   end
 
   test "a page of 50 by keyset, the cursor opaque, null on the last page", c do
@@ -195,12 +221,16 @@ defmodule Core.Jobs.PoolTest do
     for n <- 1..50, do: job_fixture(c.scope, title: "Unposted #{n}")
 
     {:ok, %{items: first, next_cursor: cursor}} =
-      Pool.list(c.scope, in_team(%{"sort" => "posted"}, c.scope), @now)
+      Pool.list(c.scope, in_team(%{"$order" => %{"posted_on" => "$DESC"}}, c.scope), @now)
 
     assert Enum.take(Enum.map(first, & &1.title), 2) == ["Go Engineer", "Elixir Developer"]
 
     {:ok, %{items: rest, next_cursor: nil}} =
-      Pool.list(c.scope, in_team(%{"sort" => "posted", "cursor" => cursor}, c.scope), @now)
+      Pool.list(
+        c.scope,
+        in_team(%{"$order" => %{"posted_on" => "$DESC"}, "cursor" => cursor}, c.scope),
+        @now
+      )
 
     assert length(first) + length(rest) == 54
   end
@@ -244,7 +274,11 @@ defmodule Core.Jobs.PoolTest do
         Act.dismiss(c.scope, c.dismissed.id, %{profile_id: c.golang.id, reason: "money"}, @now)
 
       assert {:ok, %{items: rows, next_cursor: nil}} =
-               Pool.list(c.scope, in_team(%{"suggested_for" => c.golang.id}, c.scope), @now)
+               Pool.list(
+                 c.scope,
+                 in_team(where(%{"suggested_for" => %{"$EQUAL" => c.golang.id}}), c.scope),
+                 @now
+               )
 
       # 100, 100 (a job silent on all but its workplace). On site is a deal
       # breaker for a remote-only profile, so it scores 0 however well its
@@ -268,10 +302,60 @@ defmodule Core.Jobs.PoolTest do
 
       assert Pool.list(
                scope_for(c.muaz),
-               in_team(%{"suggested_for" => imrans.id}, scope_for(c.muaz)),
+               in_team(where(%{"suggested_for" => imrans.id}), scope_for(c.muaz)),
                @now
              ) ==
                {:error, :not_found}
     end
+  end
+
+  test "$order: one field, only the directions the keyset pages", c do
+    assert titles(c.scope, %{"$order" => %{"first_seen_at" => "$DESC"}}) == titles(c.scope, %{})
+
+    assert {:error, {:invalid_filter, %{"first_seen_at" => _}}} =
+             Pool.list(
+               c.scope,
+               in_team(%{"$order" => %{"first_seen_at" => "$ASC"}}, c.scope),
+               @now
+             )
+
+    assert {:error, {:invalid_filter, %{"title" => _}}} =
+             Pool.list(c.scope, in_team(%{"$order" => %{"title" => "$ASC"}}, c.scope), @now)
+
+    assert {:error, {:invalid_filter, %{"$order" => _}}} =
+             Pool.list(
+               c.scope,
+               in_team(
+                 %{"$order" => %{"first_seen_at" => "$DESC", "posted_on" => "$DESC"}},
+                 c.scope
+               ),
+               @now
+             )
+  end
+
+  test "the money filter's currency sorts by money; a project budget sorts projects", c do
+    money = %{"min_minor" => "1", "currency" => "USD", "period" => "project"}
+
+    assert titles(
+             c.scope,
+             where(%{"money" => %{"$GTE" => money}}, %{"$order" => %{"money" => "$DESC"}})
+           ) ==
+             ["Café ordering app"]
+
+    assert {:error, {:invalid, %{"currency" => _}}} =
+             Pool.list(
+               c.scope,
+               in_team(%{"$order" => %{"money" => "$DESC"}, "currency" => "dollars"}, c.scope),
+               @now
+             )
+  end
+
+  test "suggested_for inside $OR, without the profile at the top, is refused", c do
+    assert {:error, {:invalid_filter, %{"suggested_for" => _}}} =
+             Pool.list(
+               c.scope,
+               in_team(where(%{"$OR" => [%{"suggested_for" => c.golang.id}]}), c.scope),
+               @now
+             )
   end
 end

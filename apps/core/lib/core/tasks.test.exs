@@ -201,7 +201,7 @@ defmodule Core.TasksTest do
 
       assert {:ok, %{id: id}} = Act.archive(hira, task.id, @now)
       assert id == task.id
-      assert {:ok, []} = Tasks.search(hira, task.title)
+      assert {:ok, []} = Tasks.search(hira, q(task.title), @now)
       assert {:ok, _sheet} = Act.unarchive(hira, task.id, @now)
       assert audit(task.id) == ["archived", "unarchived"]
 
@@ -224,13 +224,16 @@ defmodule Core.TasksTest do
       )
 
     assert {:ok, [%{id: id, title: "Shortlist ten Go roles", state: :todo}]} =
-             Tasks.search(scope_for(c.hira), "go roles")
+             Tasks.search(scope_for(c.hira), q("go roles"), @now)
 
     assert id == task.id
-    assert {:ok, [_peer_at_view]} = Tasks.search(scope_for(c.muaz), "go roles")
+    assert {:ok, [_peer_at_view]} = Tasks.search(scope_for(c.muaz), q("go roles"), @now)
     Data.Teams.put_settings(c.backend.id, %{peer_tasks: :hidden})
-    assert {:ok, []} = Tasks.search(scope_for(c.muaz), "go roles")
-    assert {:error, :not_found} = Tasks.search(customer_scope_for(c.tanweer), "go")
+    assert {:ok, []} = Tasks.search(scope_for(c.muaz), q("go roles"), @now)
+    assert {:error, :not_found} = Tasks.search(customer_scope_for(c.tanweer), q("go"), @now)
+
+    assert {:error, {:invalid_filter, %{"title" => _}}} =
+             Tasks.search(scope_for(c.hira), %{"$where" => %{"title" => "Go"}}, @now)
   end
 
   test "the customer's activity is §6.4's: no stage, priority or private; assignees in their words",
@@ -267,4 +270,6 @@ defmodule Core.TasksTest do
   end
 
   defp user(customer), do: Data.Accounts.get_user(customer.user_id)
+
+  defp q(words), do: %{"$where" => %{"q" => %{"$ILIKE" => words}}}
 end

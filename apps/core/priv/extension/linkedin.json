@@ -82,35 +82,38 @@
     "workplace_text": {
       "on": "job",
       "css": [
-        ".job-details-fit-level-preferences button:nth-of-type(1) strong",
-        ".job-details-preferences-and-skills__pill:nth-of-type(1)",
+        ".job-details-fit-level-preferences button strong",
+        ".job-details-preferences-and-skills__pill",
         ".jobs-unified-top-card__workplace-type",
         ".job-details-jobs-unified-top-card__workplace-type",
         "li.job-details-jobs-unified-top-card__job-insight span[aria-hidden='true']"
       ],
       "read": "text",
+      "match": "\\b(remote|on[- ]?site|hybrid)\\b",
       "required": false
     },
     "employment_text": {
       "on": "job",
       "css": [
-        ".job-details-fit-level-preferences button:nth-of-type(2) strong",
-        ".job-details-preferences-and-skills__pill:nth-of-type(2)",
+        ".job-details-fit-level-preferences button strong",
+        ".job-details-preferences-and-skills__pill",
         ".job-details-jobs-unified-top-card__job-insight--highlight span[aria-hidden='true']",
-        ".description__job-criteria-list li:nth-child(2) .description__job-criteria-text"
+        ".description__job-criteria-list li .description__job-criteria-text"
       ],
       "read": "text",
+      "match": "\\b(full[- ]time|part[- ]time|contract|temporary|internship|volunteer)\\b",
       "required": false
     },
     "seniority_text": {
       "on": "job",
       "css": [
-        ".job-details-fit-level-preferences button:nth-of-type(3) strong",
-        ".job-details-preferences-and-skills__pill:nth-of-type(3)",
-        ".description__job-criteria-list li:nth-child(1) .description__job-criteria-text",
+        ".job-details-fit-level-preferences button strong",
+        ".job-details-preferences-and-skills__pill",
+        ".description__job-criteria-list li .description__job-criteria-text",
         ".jobs-unified-top-card__job-insight span.jobs-unified-top-card__job-insight-view-model-secondary"
       ],
       "read": "text",
+      "match": "\\b(entry[- ]level|associate|mid[- ]senior level|director|executive|internship)\\b",
       "required": false
     },
     "salary_text": {
@@ -118,34 +121,37 @@
       "css": [
         "#SALARY .jobs-details__salary-main-rail-card",
         ".jobs-details__salary-main-rail-card",
-        ".job-details-fit-level-preferences button.salary-button strong",
+        ".job-details-fit-level-preferences button strong",
         ".compensation__salary",
         ".salary.compensation__salary"
       ],
       "read": "text",
+      "match": "[$€£¥₹]|\\b(?:usd|eur|gbp|cad|aud|inr|pkr|rs)\\b|/\\s?(?:yr|year|hr|hour|mo|month|wk|week|day)\\b|\\bper (?:year|hour|month|week|day)\\b",
       "required": false
     },
     "posted_text": {
       "on": "job",
       "css": [
-        ".job-details-jobs-unified-top-card__tertiary-description-container span.tvm__text:nth-child(3)",
-        ".job-details-jobs-unified-top-card__primary-description-container span.tvm__text:nth-child(3)",
+        ".job-details-jobs-unified-top-card__tertiary-description-container span.tvm__text",
+        ".job-details-jobs-unified-top-card__primary-description-container span.tvm__text",
         ".jobs-unified-top-card__posted-date",
         ".posted-time-ago__text",
         "[data-view-name='job-details'] .job-details-posted"
       ],
       "read": "text",
+      "match": "\\bago\\b|^reposted\\b",
       "required": true
     },
     "applicants_text": {
       "on": "job",
       "css": [
-        ".job-details-jobs-unified-top-card__tertiary-description-container span.tvm__text:nth-child(5)",
-        ".job-details-jobs-unified-top-card__primary-description-container span.tvm__text:nth-child(5)",
+        ".job-details-jobs-unified-top-card__tertiary-description-container span.tvm__text",
+        ".job-details-jobs-unified-top-card__primary-description-container span.tvm__text",
         ".jobs-unified-top-card__applicant-count",
         ".num-applicants__caption"
       ],
       "read": "text",
+      "match": "\\bapplicants?\\b|\\bclicked apply\\b",
       "required": false
     },
     "apply_url": {
@@ -157,7 +163,8 @@
         "a.apply-button[href]"
       ],
       "read": "href",
-      "required": false
+      "required": false,
+      "required_when": { "apply_kind": ["external_ats"] }
     },
     "skills_text": {
       "on": "job",
@@ -227,6 +234,17 @@
       ],
       "read": "text",
       "required": true
+    },
+    "thread.other_active_text": {
+      "on": "thread",
+      "css": [
+        ".msg-title-bar .msg-entity-lockup__presence-status",
+        ".msg-title-bar .msg-entity-lockup__subtitle",
+        ".msg-thread .msg-entity-lockup__presence-status",
+        "[data-view-name='message-thread-header'] .presence-status"
+      ],
+      "read": "text",
+      "required": false
     },
     "messages": {
       "on": "thread",

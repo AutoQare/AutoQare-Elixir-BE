@@ -1,7 +1,7 @@
 defmodule Data.Tasks.Reply do
   @moduledoc """
   An answer to a comment (AQ-02 §5.1): one level by construction. Carries
-  `task_id` for the one-read notification set, as in mCart.
+  `task_id` for the one-read notification set, as in tCart.
   """
 
   use Data.Schema

@@ -1,5 +1,5 @@
 defmodule ApiTeam.BoardController do
-  @moduledoc "The console's board page (AQ-02 §7.2, AQ-03B §5.1): `GET /board?team_id&mine&watching&customer_id&…`."
+  @moduledoc "The console's board page (AQ-02 §7.2, AQ-03B §5.1): `GET /board?team_id&$where&$order&older` (`$where` and `$order` are `Data.Filters.Tasks` and `TasksSort`, AQ-11B)."
 
   use Phoenix.Controller, formats: [:json]
 

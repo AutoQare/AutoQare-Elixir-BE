@@ -38,6 +38,18 @@ defmodule ApiClient.MeetingControllerTest do
     assert ics.status == 200 and ics.resp_body =~ "BEGIN:VEVENT"
     assert ["text/calendar; charset=utf-8"] = get_resp_header(ics, "content-type")
 
+    assert body(as_customer(c.tanweer, :get, "/v1/meetings?$where[upcoming][$EQUAL]=true"))[
+             "items"
+           ]
+           |> Enum.map(& &1["id"]) == [id]
+
+    assert body(as_customer(c.tanweer, :get, "/v1/meetings?$where[status][$EQUAL]=cancelled"))[
+             "items"
+           ] == []
+
+    refused = as_customer(c.tanweer, :get, "/v1/meetings?$where[team_id][$EQUAL]=x")
+    assert refused.status == 422 and body(refused)["error"]["code"] == "invalid_filter"
+
     assert body(as_customer(c.naveed, :get, "/v1/meetings"))["items"] == []
     assert as_customer(c.naveed, :get, "/v1/meetings/#{id}/ics").status == 404
   end

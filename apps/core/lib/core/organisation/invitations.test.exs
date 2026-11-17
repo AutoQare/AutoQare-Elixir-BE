@@ -182,8 +182,13 @@ defmodule Core.Organisation.InvitationsTest do
 
       assert {:ok, all} = Invitations.list(admin)
       assert Enum.map(all, & &1.id) |> Enum.sort() == Enum.sort([a.id, b.id, f.id])
-      assert {:ok, open} = Invitations.list(admin, %{"state" => "open"})
+
+      assert {:ok, open} =
+               Invitations.list(admin, %{"$where" => %{"state" => %{"$EQUAL" => "open"}}}, @now)
+
       assert Enum.map(open, & &1.id) |> Enum.sort() == Enum.sort([a.id, b.id])
+      assert {:ok, [past]} = Invitations.list(admin, %{"$where" => %{"state" => "past"}}, @now)
+      assert past.id == f.id
       assert {:ok, [mine]} = Invitations.list(lead)
       assert mine.id == b.id
 

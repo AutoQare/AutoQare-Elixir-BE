@@ -95,12 +95,22 @@ defmodule Core.Leads do
   `opts` are what only the server sets (AQ-05 §10, the extension):
   `request_id` (the queued write's, on the first event), `confirmation`
   (`applied_confirmation`, `by_hand` otherwise) and `capture` (the new
-  job's capture, `Core.Jobs.insert_new/5`); AQ-06 §7.3's `stage_kind`
+  job's capture, `Core.Jobs.insert_new/5`, with AQ-12's `link`, `origin`,
+  `origin_kind` and `origin_profile_id` passed to it too); AQ-06 §7.3's `stage_kind`
   (`:inbound` for *Create job and lead* from triage) puts an applied lead
   at the version's first stage of that kind instead of its first `applied`.
+  AQ-12's `import: %{applier_user_id, note}` (`Core.Imports.Write`) credits
+  the application to whoever applied (`applied_by_user_id`, the ledger's
+  `actor_kind: :import` with them as `actor_user_id`, `note` the History
+  line) and tells nobody: no notices, no broadcast.
   """
   @spec create(Scope.t(), map(), DateTime.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def create(%Scope{} = scope, params, %DateTime{} = now, opts \\ []) do
+  def create(%Scope{} = scope, params, %DateTime{} = now, opts \\ []),
+    do: scope |> make(params, now, opts) |> then(&answer(scope, &1, now))
+
+  @doc "`create/4` answering the lead struct rather than the sheet."
+  @spec make(Scope.t(), map(), DateTime.t(), keyword()) :: {:ok, Lead.t()} | {:error, term()}
+  def make(%Scope{} = scope, params, %DateTime{} = now, opts \\ []) do
     params = stringify(params)
 
     with {:ok, as} <- as(params["as"]),
@@ -115,7 +125,6 @@ defmodule Core.Leads do
       fn -> insert(scope, {as, again, opts}, target, profile, owner_id, facts, params, now) end
       |> Write.commit()
       |> taken(scope, target, profile)
-      |> then(&answer(scope, &1, now))
     end
   end
 
@@ -125,35 +134,41 @@ defmodule Core.Leads do
          :ok <- Guard.refuse(scope, job.canonical_key, job.team_id, profile, again: again),
          {:ok, version} <- version(scope, job, profile, params["pipeline_key"]),
          {:ok, lead} <-
-           write_lead(scope, {as, opts[:stage_kind]}, job, profile, owner_id, version, facts, now) do
-      event = first_event(scope, as, lead, again, now, opts[:request_id])
+           write_lead(scope, {as, opts}, job, profile, owner_id, version, facts, now) do
+      event = first_event(scope, {as, opts}, lead, again, now)
 
       {:ok, _audit} =
         Audit.record(scope, "created", lead, after: snapshot(lead), now: now)
 
-      told = [
-        if(lead.owner_user_id != Scope.user_id(scope),
-          do: Notices.assigned(scope, lead, event),
-          else: []
-        ),
-        if(as == :apply, do: Notices.customer_update(scope, lead, event, :applied), else: []),
-        if(again, do: Notices.applied_again(scope, lead, event), else: [])
-      ]
+      if opts[:import] do
+        {:ok, lead}
+      else
+        told = [
+          if(lead.owner_user_id != Scope.user_id(scope),
+            do: Notices.assigned(scope, lead, event),
+            else: []
+          ),
+          if(as == :apply, do: Notices.customer_update(scope, lead, event, :applied), else: []),
+          if(again, do: Notices.applied_again(scope, lead, event), else: [])
+        ]
 
-      {:ok, lead, [told, Realtime.lead_events("lead_created", lead)]}
+        {:ok, lead, [told, Realtime.lead_events("lead_created", lead)]}
+      end
     end
   end
 
   defp made_job(_scope, %{job: %{} = job}, _now, _opts), do: {:ok, job}
 
   defp made_job(scope, %{team: team, body: body}, now, opts) do
-    case Jobs.insert_new(scope, team, body, now, Keyword.take(opts, [:capture])) do
+    job_opts = Keyword.take(opts, [:capture, :link, :origin, :origin_kind, :origin_profile_id])
+
+    case Jobs.insert_new(scope, team, body, now, job_opts) do
       {:ok, job} -> {:ok, Data.Jobs.reload(job)}
       error -> error
     end
   end
 
-  defp write_lead(scope, {as, stage_kind}, job, profile, owner_id, version, facts, now) do
+  defp write_lead(scope, {as, opts}, job, profile, owner_id, version, facts, now) do
     base = %{
       organisation_id: job.organisation_id,
       job_id: job.id,
@@ -170,8 +185,9 @@ defmodule Core.Leads do
           base
           |> Map.merge(facts)
           |> Map.merge(applied(scope, version, facts))
+          |> Map.merge(applier(opts[:import]))
           |> Map.put(:state, :in_progress)
-          |> at_kind(version, stage_kind),
+          |> at_kind(version, opts[:stage_kind]),
         else: Map.put(base, :state, :todo)
 
     case Store.create(attrs) do
@@ -228,21 +244,32 @@ defmodule Core.Leads do
   @doc "The version's first `applied` stage (every pipeline keeps one, §9.2)."
   def first_applied(version), do: Enum.find(version.stages, &(&1.kind == :applied))
 
-  defp first_event(scope, :save, lead, _again, now, request_id),
-    do: Ledger.record(scope, lead, :saved, %{to_label: "To do", request_id: request_id}, now)
+  defp first_event(scope, {:save, opts}, lead, _again, now),
+    do:
+      Ledger.record(scope, lead, :saved, %{to_label: "To do", request_id: opts[:request_id]}, now)
 
   # After a purge (AQ-04B §7.2), *Apply again…* makes a new lead whose first
-  # event says so: an `applied` with `is_again` and the reason.
-  defp first_event(scope, :apply, lead, again, now, request_id),
+  # event says so: an `applied` with `is_again` and the reason. An import's
+  # (AQ-12 §11.4) is the import's, credited to whoever applied.
+  defp first_event(scope, {:apply, opts}, lead, again, now),
     do:
       Ledger.record(
         scope,
         lead,
         :applied,
-        %{to_label: lead.stage.name, occurred_at: lead.applied_at, request_id: request_id}
-        |> Map.merge(if(again, do: %{is_again: true, note: again}, else: %{})),
+        %{to_label: lead.stage.name, occurred_at: lead.applied_at, request_id: opts[:request_id]}
+        |> Map.merge(if(again, do: %{is_again: true, note: again}, else: %{}))
+        |> Map.merge(imported(opts[:import])),
         now
       )
+
+  defp applier(nil), do: %{}
+  defp applier(%{applier_user_id: id}), do: %{applied_by_user_id: id}
+
+  defp imported(nil), do: %{}
+
+  defp imported(%{applier_user_id: id, note: note}),
+    do: %{actor_kind: :import, actor_user_id: id, note: note}
 
   # ── The parts a create carries ──────────────────────────────────────────────
 

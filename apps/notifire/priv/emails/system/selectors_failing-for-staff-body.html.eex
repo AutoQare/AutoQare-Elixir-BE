@@ -1,0 +1,7 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Open extension health", @url) %>
+<%= link(@url) %>
+<%= paragraph("The extension may be missing jobs or replies on this site until its selectors are updated.") %>

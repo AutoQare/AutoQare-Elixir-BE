@@ -4,7 +4,7 @@ defmodule Data.Repo.Migrations.CreateCustomerApprovalPolicies do
   @moduledoc """
   A customer's approval rules (AQ-07 §5.3, §8, QP7-16; PLAN Q12): **only
   the overrides are stored** — Q12's defaults are code
-  (`Core.Approvals.Policies`), as mCart keeps its settings 1:1 with
+  (`Core.Approvals.Policies`), as tCart keeps its settings 1:1 with
   defaults. Per customer, across every team (one set of rules); edited by a
   team lead of a team serving them, or the system admin. `needs` makes the
   slots (`both`: customer and team lead), `rule` is *any* or *all*, and

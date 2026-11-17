@@ -53,42 +53,31 @@ defmodule Data.Invitations do
   end
 
   @doc """
-  An organisation's invitations, newest first. `team_ids` narrows to those
-  teams' members and the customers those teams serve (and no admin ones);
-  `state: :open` keeps the unaccepted, unrevoked and unexpired at `now`.
+  An organisation's invitations, newest first. `team_ids` (`nil`: all)
+  narrows to those teams' members and the customers those teams serve (and
+  no admin ones); `where` is the list's `$where` (`Data.Filters.Invitations`:
+  `state` open or past at `context.now`, `kind`, `team_id`, `customer_id`,
+  `q`). `{:ok, invitations}`, or the 422 `invalid_filter`.
   """
-  @spec list(binary(), keyword()) :: [Invitation.t()]
-  def list(organisation_id, opts \\ []) do
+  @spec list(binary(), [binary()] | nil, term(), map()) ::
+          {:ok, [Invitation.t()]} | {:error, term()}
+  def list(organisation_id, team_ids, where, context) do
     query =
       from(i in Invitation,
         where: i.organisation_id == ^organisation_id,
         order_by: [desc: i.inserted_at]
       )
+      |> served_by(team_ids)
 
-    query =
-      case Keyword.get(opts, :team_ids) do
-        nil ->
-          query
+    with {:ok, query} <- Data.Filters.where(query, Data.Filters.Invitations, where, context),
+         do: {:ok, query |> Repo.all() |> Enum.map(&load/1)}
+  end
 
-        ids ->
-          served = from(ct in CustomerTeam, where: ct.team_id in ^ids, select: ct.customer_id)
-          where(query, [i], i.team_id in ^ids or i.customer_id in subquery(served))
-      end
+  defp served_by(query, nil), do: query
 
-    query =
-      case {Keyword.get(opts, :state), Keyword.get(opts, :now)} do
-        {:open, %DateTime{} = now} ->
-          where(
-            query,
-            [i],
-            is_nil(i.accepted_at) and is_nil(i.revoked_at) and i.expires_at > ^now
-          )
-
-        _all ->
-          query
-      end
-
-    query |> Repo.all() |> Enum.map(&load/1)
+  defp served_by(query, ids) do
+    served = from(ct in CustomerTeam, where: ct.team_id in ^ids, select: ct.customer_id)
+    where(query, [i], i.team_id in ^ids or i.customer_id in subquery(served))
   end
 
   @doc "The open invitation (not accepted, not revoked, any expiry) for a target, or `nil`."

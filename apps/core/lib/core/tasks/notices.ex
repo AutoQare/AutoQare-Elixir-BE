@@ -231,6 +231,70 @@ defmodule Core.Tasks.Notices do
   end
 
   @doc """
+  `tasks.step_done` (AQ-10B §5.2 T10) to the task's author and assignees
+  when someone else ticked a step done — pushed only when the customer
+  ticked it: "Tanweer ticked “Send the CV” on “Apply to Corvid”".
+  """
+  @spec step_done(Scope.t(), map(), map()) :: list()
+  def step_done(scope, task, step) do
+    actor = actor(scope)
+    audience = audience(task)
+    by_customer? = Scope.customer?(scope)
+
+    for user_id <- quiet(task, audience.author ++ audience.assignees, scope), not draft?(task) do
+      ensure(scope, user_id, "tasks.step_done", task,
+        title: "#{name(actor, task)} ticked #{Words.quoted(step.title)} done",
+        body: "A step of " <> Words.quoted(task.title),
+        actor: actor,
+        dedupe: "step:#{step.id}:done:#{DateTime.to_iso8601(step.done_at)}",
+        only_channels: if(by_customer?, do: ["push"], else: [])
+      )
+    end
+  end
+
+  @doc """
+  `tasks.customer_changed` (AQ-10B §5.2 T11) to the task's author and
+  assignees: the customer added a file (`{:file, name}`) or edited their
+  task (`:edited`).
+  """
+  @spec customer_changed(Scope.t(), map(), term(), binary()) :: list()
+  def customer_changed(scope, task, what, key) do
+    actor = actor(scope)
+    audience = audience(task)
+
+    title =
+      case what do
+        {:file, file} -> "#{name(actor, task)} added #{file} to #{Words.quoted(task.title)}"
+        :edited -> "#{name(actor, task)} edited #{Words.quoted(task.title)}"
+      end
+
+    for user_id <- quiet(task, audience.author ++ audience.assignees, scope), not draft?(task) do
+      ensure(scope, user_id, "tasks.customer_changed", task,
+        title: title,
+        actor: actor,
+        dedupe: "task:#{task.id}:customer_changed:#{key}"
+      )
+    end
+  end
+
+  @doc """
+  `tasks.removed` (AQ-10B §5.2 T12) to the assignees when a task is
+  archived under them: "Fiza archived “Apply to Corvid”".
+  """
+  @spec removed(Scope.t(), map(), DateTime.t()) :: list()
+  def removed(scope, task, %DateTime{} = at) do
+    actor = actor(scope)
+
+    for user_id <- quiet(task, audience(task).assignees, scope), not draft?(task) do
+      ensure(scope, user_id, "tasks.removed", task,
+        title: "#{name(actor, task)} archived #{Words.quoted(task.title)}",
+        actor: actor,
+        dedupe: "task:#{task.id}:removed:#{DateTime.to_iso8601(at)}"
+      )
+    end
+  end
+
+  @doc """
   A system notice (`tasks.due_soon`, `tasks.overdue`) to `user_id` with
   `title` already in their words: the due scan's.
   """
@@ -337,7 +401,8 @@ defmodule Core.Tasks.Notices do
         title: opts[:title],
         body: opts[:body],
         link_path: "/board/#{task.id}",
-        dedupe_key: opts[:dedupe]
+        dedupe_key: opts[:dedupe],
+        only_channels: opts[:only_channels]
       })
 
     cond do

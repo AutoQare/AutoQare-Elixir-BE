@@ -35,7 +35,8 @@ defmodule ApiTeam.ContactController do
     end
   end
 
-  def show(conn, %{"id" => id}), do: contact(conn, Contacts.get(conn.assigns.scope, id))
+  def show(conn, %{"id" => id}),
+    do: contact(conn, Contacts.get(conn.assigns.scope, id, Clock.now()))
 
   def update(conn, %{"id" => id} = params),
     do:

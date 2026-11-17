@@ -8,7 +8,7 @@ defmodule Data.JobParts do
   import Ecto.Query, warn: false
 
   alias Data.Jobs.{Dismissal, IndeedDetails, Job, JobSkill, LinkedinDetails, Merge, Signal}
-  alias Data.Jobs.{Snapshot, UpworkDetails, YcDetails}
+  alias Data.Jobs.{Snapshot, UpworkDetails, WellfoundDetails, YcDetails}
   alias Data.Repo
 
   @person [person: :photo]
@@ -16,7 +16,8 @@ defmodule Data.JobParts do
     linkedin: LinkedinDetails,
     upwork: UpworkDetails,
     indeed: IndeedDetails,
-    yc_waas: YcDetails
+    yc_waas: YcDetails,
+    wellfound: WellfoundDetails
   }
 
   # ── Skills ──────────────────────────────────────────────────────────────────

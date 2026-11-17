@@ -28,11 +28,8 @@ defmodule Core.Approvals do
   alias Data.Approvals, as: Store
   alias Data.Approvals.{Approval, Version}
   alias Data.Scope
-  alias Data.Vocabulary
 
   @page 50
-  @kinds Vocabulary.approval_kinds() |> Enum.map(&String.to_atom/1)
-  @states Vocabulary.approval_states() |> Enum.map(&String.to_atom/1)
   @audited ~w(approval_kind state title lead_id profile_id message_id conversation_id rule due_at
               auto_approve_at requested_by_user_id submitted_at decided_at version_count effect
               effect_note)a
@@ -54,25 +51,25 @@ defmodule Core.Approvals do
   end
 
   @doc """
-  `GET /approvals?team_id&tab=waiting|asked|all&kind&customer_id&lead_id&state&due=overdue|week&cursor`
-  (the console: one team's; `all` a team lead's or the system admin's) and
-  the portal's `GET /approvals?tab=waiting|all&lead_id` (the customer's
-  own, with a customer slot). *Waiting on me* is soonest due first; the rest newest
-  first. Answers the **page**.
+  `GET /approvals?team_id&tab=waiting|asked|all&$where&cursor` (the
+  console: one team's; `all` a team lead's or the system admin's) and the
+  portal's `GET /approvals?tab=waiting|all&$where` (the customer's own,
+  with a customer slot). `$where` is `Data.Filters.Approvals`' (`kind`,
+  `state`, `customer_id`, `lead_id`, `due`), in SQL; `tab` is access,
+  checked per row with the read check. *Waiting on me* is soonest due
+  first; the rest newest first. Answers the **page**.
   """
   @spec list(Scope.t(), map(), DateTime.t()) :: {:ok, map()} | {:error, term()}
   def list(%Scope{} = scope, params, %DateTime{} = now) do
     params = Leads.stringify(params)
 
-    with {:ok, tab, where} <- where(scope, params),
-         {:ok, narrow} <- narrow(params),
-         {:ok, offset} <- cursor(params["cursor"]) do
+    with {:ok, tab, whose} <- whose(scope, params),
+         {:ok, offset} <- cursor(params["cursor"]),
+         {:ok, rows} <-
+           Store.page(whose, params["$where"], Data.Filters.context(scope, now: now)) do
       items =
-        (where ++ narrow.store)
-        |> Store.list()
-        |> Enum.filter(
-          &(readable?(scope, &1) and in_tab?(scope, tab, &1) and due?(narrow.due, &1, now))
-        )
+        rows
+        |> Enum.filter(&(readable?(scope, &1) and in_tab?(scope, tab, &1)))
         |> order(tab)
 
       {:ok,
@@ -83,7 +80,7 @@ defmodule Core.Approvals do
     end
   end
 
-  defp where(scope, params) do
+  defp whose(scope, params) do
     if Scope.customer?(scope) do
       with {:ok, tab} <- tab(params["tab"], ~w(waiting all)),
            do: {:ok, tab, [customer_id: Scope.customer_id(scope), customer_slot: true]}
@@ -112,17 +109,6 @@ defmodule Core.Approvals do
 
   defp all_tab(_scope, _team, _tab), do: :ok
 
-  defp narrow(params) do
-    with {:ok, kind} <- enum(params["kind"], @kinds, "kind"),
-         {:ok, state} <- enum(params["state"], @states, "state"),
-         {:ok, customer_id} <- uuid(params["customer_id"], "customer_id"),
-         {:ok, lead_id} <- uuid(params["lead_id"], "lead_id"),
-         {:ok, due} <- due_filter(params["due"]) do
-      {:ok,
-       %{store: [kind: kind, state: state, customer_id: customer_id, lead_id: lead_id], due: due}}
-    end
-  end
-
   defp readable?(scope, a), do: Access.can?(scope, :read, {:approval, Sheet.subject(a)})
 
   defp in_tab?(scope, :waiting, a), do: Sheet.waiting_on_me?(scope, a)
@@ -131,20 +117,6 @@ defmodule Core.Approvals do
     do: not is_nil(a.requested_by_user_id) and a.requested_by_user_id == Scope.user_id(scope)
 
   defp in_tab?(_scope, :all, _a), do: true
-
-  defp due?(nil, _a, _now), do: true
-  defp due?(:overdue, a, now), do: Sheet.overdue?(a, now)
-
-  defp due?(:week, a, now),
-    do:
-      a.state == :pending and not is_nil(a.due_at) and
-        DateTime.compare(a.due_at, DateTime.add(now, 7 * 86_400, :second)) != :gt
-
-  defp due_filter(nil), do: {:ok, nil}
-  defp due_filter(""), do: {:ok, nil}
-  defp due_filter("overdue"), do: {:ok, :overdue}
-  defp due_filter("week"), do: {:ok, :week}
-  defp due_filter(_other), do: Leads.invalid("due", "is overdue or week")
 
   # Waiting on me: soonest due first (none last), then oldest asked; else newest first.
   defp order(items, :waiting) do
@@ -167,6 +139,17 @@ defmodule Core.Approvals do
     with {:ok, pending} <- pending(scope, params) do
       {:ok, %{waiting_on_me: Enum.count(pending, &Sheet.waiting_on_me?(scope, &1))}}
     end
+  end
+
+  @doc """
+  The pending approvals with an open slot the caller may take, across the
+  caller's teams (the customer's own in the portal): what the nav counts,
+  *Waiting on you* on the dashboard (AQ-11 §4).
+  """
+  @spec waiting(Scope.t()) :: [Approval.t()]
+  def waiting(%Scope{} = scope) do
+    {:ok, pending} = pending(scope, %{})
+    Enum.filter(pending, &Sheet.waiting_on_me?(scope, &1))
   end
 
   defp pending(scope, params) do
@@ -425,24 +408,6 @@ defmodule Core.Approvals do
     end
 
     :ok
-  end
-
-  defp enum(value, _allowed, _field) when value in [nil, ""], do: {:ok, nil}
-
-  defp enum(value, allowed, field) do
-    case Ask.pick(value, allowed) do
-      nil -> Leads.invalid(field, "is not one of the list")
-      atom -> {:ok, atom}
-    end
-  end
-
-  defp uuid(value, _field) when value in [nil, ""], do: {:ok, nil}
-
-  defp uuid(value, field) do
-    case Ecto.UUID.cast(value) do
-      {:ok, id} -> {:ok, id}
-      :error -> Leads.invalid(field, "is not an id")
-    end
   end
 
   defp encode(offset), do: Base.url_encode64("approvals:#{offset}", padding: false)

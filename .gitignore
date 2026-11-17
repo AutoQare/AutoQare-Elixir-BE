@@ -35,3 +35,7 @@ autoqare-*.tar
 # on purpose and never committed: this is somebody's documents.
 /apps/data/priv/uploads/
 /priv/uploads/
+
+# The release (`mix release autoqare`, `path: "builds"` in mix.exs): built
+# per deploy by Jenkins, never committed.
+/builds/

@@ -1,0 +1,111 @@
+{
+  "site": "yc_waas",
+  "contract": 1,
+  "save_only": true,
+  "pages": {
+    "job": {
+      "url": ["re:^/jobs/[^/?#]+", "re:^/companies/[^/]+/jobs/[^/?#]+"],
+      "ready": [".job-details", ".job-description", "main h1", "[data-page='job']"]
+    }
+  },
+  "fields": {
+    "title": {
+      "on": "job",
+      "css": [".job-details h1", "h1.job-title", ".company-title", "main h1"],
+      "read": "text",
+      "required": true
+    },
+    "company_name": {
+      "on": "job",
+      "css": [
+        ".company-details .company-name",
+        "a.company-name",
+        "a[href^='/companies/']",
+        ".company-name"
+      ],
+      "read": "text",
+      "required": true
+    },
+    "company_url": {
+      "on": "job",
+      "css": [
+        ".company-details a.company-name[href]",
+        "a.company-name[href]",
+        "a[href^='/companies/']"
+      ],
+      "read": "href",
+      "required": false
+    },
+    "location_text": {
+      "on": "job",
+      "css": [".job-meta .job-location", ".job-location", "[data-field='location']"],
+      "read": "text",
+      "required": false
+    },
+    "employment_text": {
+      "on": "job",
+      "css": [".job-meta .job-type", ".job-type", "[data-field='job-type']"],
+      "read": "text",
+      "required": false
+    },
+    "salary_text": {
+      "on": "job",
+      "css": [".job-meta .job-salary", ".job-salary", "[data-field='salary']"],
+      "read": "text",
+      "required": false
+    },
+    "skills_text": {
+      "on": "job",
+      "css": [".job-skills .job-skill", ".job-skill", "[data-field='skill']"],
+      "read": "text",
+      "required": false,
+      "all": true
+    },
+    "description_html": {
+      "on": "job",
+      "css": [".job-description", ".job-details .prose", "[data-field='description']"],
+      "read": "html",
+      "required": true
+    },
+    "yc.batch_text": {
+      "on": "job",
+      "css": [".company-details .company-batch", ".company-batch", "[data-field='batch']"],
+      "read": "text",
+      "required": false
+    },
+    "yc.team_size_text": {
+      "on": "job",
+      "css": [
+        ".company-details .company-team-size",
+        ".company-team-size",
+        "[data-field='team-size']"
+      ],
+      "read": "text",
+      "required": false
+    },
+    "yc.stage_text": {
+      "on": "job",
+      "css": [".company-details .company-stage", ".company-stage", "[data-field='stage']"],
+      "read": "text",
+      "required": false
+    },
+    "yc.experience_text": {
+      "on": "job",
+      "css": [".job-meta .job-experience", ".job-experience", "[data-field='experience']"],
+      "read": "text",
+      "required": false
+    },
+    "yc.visa_text": {
+      "on": "job",
+      "css": [".job-meta .job-visa", ".job-visa", "[data-field='visa']"],
+      "read": "text",
+      "required": false
+    },
+    "yc.equity_text": {
+      "on": "job",
+      "css": [".job-meta .job-equity", ".job-equity", "[data-field='equity']"],
+      "read": "text",
+      "required": false
+    }
+  }
+}

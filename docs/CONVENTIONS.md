@@ -1,6 +1,6 @@
 # AutoQare Backend — Conventions
 
-The enforced rules for this codebase, adapted from mCart's. `CLAUDE.md` is
+The enforced rules for this codebase, adapted from tCart's. `CLAUDE.md` is
 the index; `AGENTS.md` covers Phoenix mechanics; `../PLAN.md` is the product.
 This covers AutoQare's own decisions.
 
@@ -312,6 +312,84 @@ proposed: confirm it first."). **The webhook answers 200 for every mail
 it accepted** — an unknown address and an unreadable mail included
 (QP9-7) — with `{outcome}`.
 
+### P10 (AQ-10 §4, §11.4)
+
+| Status | `code` | When |
+|---|---|---|
+| 403 | `forget_not_allowed` | *Forget* (`POST /contacts/:id/forget`, `POST /companies/:id/forget-people`) by staff who see the person but lead no team touching them (`{:error, :forget_not_allowed}`, from `Core.Access.Behaviour`): "Only a team lead can forget someone." The system admin and a team lead of a team touching the subject may; anyone who can't see it gets `not_found` |
+
+Everything else Behaviour refuses is a field error (422) — a trigger the
+subject doesn't take (a company `posts_job` · `any_activity`, a contact
+`comes_online` · `replies` · `any_activity`), channels off `push · email ·
+extension`, a cool-down off 30 · 120 · 1440, an expiry off `none` ·
+`week` · `month`, an observation's kind off `observation_kinds`, an
+`observed_at` more than two minutes ahead, a note over 500 characters, an
+*Active* text nobody can read, a `time_zone` that is no IANA name, both
+or neither of `company_id` and `contact_id` — or `not_found`: a company
+or contact no team of the caller's touches, another person's watch, a
+thread the team hasn't captured, and every Behaviour route for a
+customer. `POST /ext/v1/observations` with a known `request_id` answers
+`200` `{observation_id, replayed: true}`.
+
+### P10b (AQ-10B §11.4): no new code
+
+`POST /unsubscribe` (root, no sign-in) with a dead token — expired after
+60 days, forged, or naming a group or person that isn't there — is P1's
+410 `token_invalid`. Everything else is a field error (422) or
+`not_found`: `PUT /notifications/settings/kinds/:key` on a locked kind
+(`kind`: "These can't be turned off."), on a channel the kind doesn't use
+("This kind doesn't use it."), on `extension` for a customer; an unknown
+kind or one not for the caller's audience (a customer's kind for staff,
+a staff kind or `system.*` for anyone but the system admin) is
+`not_found`; `PUT /notifications/settings/snooze` off `hour · tomorrow ·
+monday · null` (`for`); `digest_frequency` off `daily · weekly · off`;
+`help_email` not an address. Watching or muting a lead, or muting a
+customer, the caller can't read is `not_found`, as is any of them for a
+customer. Account is no longer a group that refuses a switch: its locked
+kinds ignore switches instead.
+
+### P11 (AQ-11 §7.4): no new code
+
+`GET /dashboard/team` for a team the caller doesn't lead (staff, another
+team's lead, `team_id=all` for anyone but the system admin) and `GET
+/home` for staff are `not_found`; a `period` off `today · week · month` or
+a `cohort` off `this_month · last_month · last_90` is a field error (422).
+`PATCH /teams/:id/members/:user_id` by staff is `forbidden` with "Only a
+team lead can do that in this team."; without `daily_target`, or below 0,
+a field error; `working_days` off the ISO weekdays 1–7, or a day twice, a
+field error.
+
+### AQ-11b (AQ-11B §11.4)
+
+| Status | `code` | When |
+|---|---|---|
+| 422 | `invalid_filter` | A list's `$where` or `$order` names a field the list doesn't filter or sort by, an operator or direction that field doesn't take, or a value it can't read (`{:error, {:invalid_filter, %{field => [words]}}}`, from `Data.Filters`): "This list can't be filtered that way: colour."; `details: {field: ["is not a filter of this list"]}` — or `["can't be filtered with $GT"]`, `["has a value this filter can't take"]`, `["can't be sorted \"$ASC\""]`; a `$where` that isn't an object names `$where` |
+
+FatEcto alone would drop such a field and answer every row; the 422 is
+what tells a client its filter did nothing.
+
+### P12 (AQ-12 §11.4)
+
+| Status | `code` | When |
+|---|---|---|
+| 413 | `import_too_large` | `POST /imports` with a file over **20,000 rows** or **10 MB** (`{:error, {:import_too_large, %{max_rows, max_bytes}}}`): "That file is too big to import: at most 20,000 rows and 10 MB a file."; `details: {max_rows, max_bytes}`. The upload itself (`media_kind: import`) is capped at the same 10 MB by P1's 413 `file_too_large` |
+| 422 | `import_unreadable` | A file that is neither a `.csv` nor an `.xlsx` that can be read, or one with no header row (`{:error, :import_unreadable}`, or `{:error, {:import_unreadable, words}}` with what was wrong): "We couldn't read that file. Upload a .csv or an .xlsx file." A file found unreadable by the background read sets the import `failed` with its `error_text` instead |
+| 409 | `import_not_ready` | `POST /imports/:id/commit` (or a mapping change) on an import that isn't `ready` (`{:error, {:import_not_ready, %{state}}}`): "This import isn't ready to run: it's still checking the rows."; `details: {state}` as it is now |
+| 409 | `undo_expired` | `POST /imports/:id/undo` after `undo_until`, seven days after the import (`{:error, {:undo_expired, %{undo_until}}}`): "The undo for this import has run out."; `details: {undo_until}` |
+| 409 | `import_not_undoable` | `POST /imports/:id/undo` on an import that isn't `imported` — never run, undone already, or undoing (`{:error, {:import_not_undoable, %{state}}}`): "This import can't be undone: it's undone already."; `details: {state}` |
+
+Everything else P12 refuses is `not_found` or a field error (422): every
+import route for anyone but a team lead of the import's team or the system
+admin (staff included), and an import of another team, is `not_found`; a
+`kind` off `import_kinds`, a `date_order` off `date_orders`, a mapping
+naming a field the kind doesn't take, a tab's profile or applier that isn't
+the team's, a `$where` on the rows off `Data.Filters.ImportRows` (P11b's
+`invalid_filter`) are 422s. `POST /jobs` with `source: fiverr` and no
+`origin_kind`, an `origin_kind` on any other source, and triage's
+*Create job and lead* on a Fiverr conversation without `origin_kind` are
+field errors. An alert email is never refused: the webhook answers 200
+and the alert is logged with the jobs it gave.
+
 ### Reserved (PLAN §15.5), arriving with the phases that raise them
 
 | Status | `code` | When |
@@ -355,7 +433,7 @@ Phoenix.PubSub.broadcast(Core.PubSub, topic, %Phoenix.Socket.Broadcast{...})
 broadcasts nothing. `Endpoint.broadcast/3` attaches the **fastlane**; a raw
 publish lands in every channel process's mailbox and routes through a
 `handle_out/3` the channels do not define — which crashed every broadcast to a
-joined client in mCart, silently, because the client reconnects and
+joined client in tCart, silently, because the client reconnects and
 refetches. The endpoint is injected as `config :core, :endpoint` because `api`
 depends on `core` and never the reverse.
 
@@ -394,6 +472,12 @@ pending rather than failing the write that produced them, and the unique
 - What `notifire` needs from `core` it gets as data on the row: a meeting's
   `.ics` is rendered by `core` and kept on the email row (`ics`), never
   read back through a `core` call.
+- **A customer with no portal login has no row** (AQ-10B QP10b-2): `core`
+  writes the words to `customer_mail` (`Core.Notifications.CustomerMail`)
+  and `notifire`'s sweep renders and sends them. Emails are designed and
+  compiled from `apps/notifire/priv/emails/` (AQ-10B §7.2): no HTML in an
+  Elixir module, every value escaped in the HTML, a template for every
+  kind that emails or the build fails.
 
 ---
 
@@ -413,6 +497,12 @@ that have nothing to do with the code under test.
 `Core.Extension.MissSweep` too, which forgets misses after 30 days): a rule
 that compares dates does the night's work once in whichever hour comes
 first, and catches up after downtime with no time-zone cron to keep right.
+
+**One daily sweep**, pinned by AQ-10 §11.4: `Core.Workers.ObservationSweep`
+deletes observations past the organisation's `observation_retention_days`.
+Its rule compares `observed_at` with a cutoff, so a missed day is caught
+up by the next run, and the hour it runs at holds nothing: a day's
+precision is all a 180-day retention needs.
 
 **The dev clock** (AQ-04B §7.6): `Core.Clock.now/0` (a delegate to
 `Utils.Clock` since AQ-08 QP8-22, so `notifire` reads the same *now*) adds
@@ -498,7 +588,67 @@ becomes the rule and the guard tests are deleted with it.
 
 ---
 
-## 12. Dependencies
+## 12. Lists filter through `$where` (AQ-11b)
+
+Every list's filters and sorts run on **fat_ecto** (GitHub master, as
+myqampus; `mix.lock` holds the commit), one module per list in
+`apps/data/lib/data/filters/`:
+
+```elixir
+defmodule Data.Filters.Contacts do
+  use FatEcto.Query.Dynamics.Buildable,
+    filterable: [company_id: ["$EQUAL", "$IN", "$NULL", "$NOT_NULL"]],
+    overrideable: ["q"],
+    ignoreable: [q: ["", "%%", nil], company_id: ["", nil, []]]
+
+  use Data.Filters, operators: [q: ["$ILIKE"]]
+
+  def prepare("q", "$ILIKE", value, _context), do: ...      # the person's words, read
+  def override_buildable("q", "$ILIKE", qn), do: dynamic(...)  # a computed filter
+  def override_buildable(_field, _operator, _value), do: nil
+end
+```
+
+- **The query format, every list, both apps and the extension:**
+  `$where` is FatEcto's object, `{"<field>": {"<$OP>": value}}`, sent as
+  nested query parameters (`$where[state][$IN][]=todo&$where[quiet][$EQUAL]=30`),
+  with `$OR` / `$AND`; `$order` is `{"<field>": "$ASC" | "$DESC"}` where
+  the list sorts. The scope (`team_id`), `cursor`, `limit` and a list's own
+  switches that aren't filters (`view`, `lane`, `group`, `older`, `tab`)
+  stay as they are. **There are no flat filter parameters.**
+- **A list never calls `build/1` itself.** It calls
+  `Data.Filters.where(base, module, params["$where"], context)`: every
+  field and operator is checked against the module's allowlist (and every
+  column's value cast to its type) first, anything else is the 422
+  `invalid_filter`; then the dynamic goes into the list's **scoped base
+  query**, which still decides access. `Data.Filters.order/2` checks
+  `$order` against the `<List>Sort` module the same way.
+- **A computed filter is an `override_buildable/3`** returning a
+  `dynamic`, on concrete values: its `prepare/4` reads what a person sends
+  (`"me"`, `"30"`, `"today"`, `"YYYY-MM-DD"`) with
+  `Data.Filters.context/2` — who is asking, *now* (the caller's, from
+  `Core.Clock` at the edge) and the organisation's zone — or refuses it.
+  `data` never names `core`: what a rule of `core` decides (the
+  dashboards' counting kinds) is handed in through the context.
+- **A list's default is a filter value**, set with
+  `Data.Filters.default/3` unless the person sent it (`archived
+  {$EQUAL: false}`).
+- **Filters run in SQL.** Only access rules stay per row (approvals'
+  `tab`, per-row read checks), and only the sorts with no SQL form stay in
+  memory (the Tracker's `next`, `labels`, `missing`; the pool's
+  `suggested_for` score) — each module says so.
+- **Paging stays the list's own**: keyset cursors where they were; FatEcto's
+  offset paginator is not used.
+- **A tile and the list it opens count alike**: the date filters read
+  `Utils.Days` (the dashboards' copy) and the tile filters reuse
+  `Data.Dashboards`' queries rather than a second copy.
+- Each module's moduledoc is its contract: a table of every field, its
+  operators and what it is. Tests beside it cover each field and operator,
+  each override against a direct query, and the 422.
+
+---
+
+## 13. Dependencies
 
 **Every third-party dependency goes in `apps/utils/mix.exs`.** Individual apps
 declare `in_umbrella` deps and nothing else; `Core.ConventionsTest` holds it.
@@ -518,7 +668,7 @@ names none of them.
 
 ---
 
-## 13. Before you finish
+## 14. Before you finish
 
 ```bash
 mix precommit

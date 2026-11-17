@@ -94,6 +94,17 @@ defmodule Utils.MixProject do
       # (AQ-07 §11.4): rendered here, then sanitised by `html_sanitize_ex`.
       # Pure Elixir, no dependencies of its own.
       {:earmark, "~> 1.4"},
+      # Every list's `$where` and `$order` (AQ-11B §11.4): one filter module
+      # per list in `Data.Filters`, as myqampus runs it, from GitHub master
+      # (`mix.lock` holds the commit).
+      {:fat_ecto, github: "tanweerdev/fat_ecto", branch: "master"},
+      # The import centre (AQ-12 §11.4, QP12-2): a `.csv` through NimbleCSV
+      # (Dashbit, Apache-2.0, MyQuriosity's bulk upload), an `.xlsx` — every
+      # tab — through xlsx_reader (Apache-2.0, pure Elixir on saxy and
+      # Erlang's `:zip`, maintained: 0.8.12, June 2026). xlsxir was the
+      # other candidate: MIT, but unreleased since 2019 and it leaks atoms.
+      {:nimble_csv, "~> 1.3"},
+      {:xlsx_reader, "~> 0.8.12"},
 
       # ── Tooling, shared by every app ────────────────────────────────────
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}

@@ -81,7 +81,11 @@ defmodule Core.Leads.Portal do
       |> Enum.map(&{&1.profile_id, &1.job.canonical_key})
       |> MapSet.new()
 
-    jobs = Enum.flat_map(teams, &JobList.all(&1, %{archived: false, statuses: [:open, :unknown]}))
+    jobs =
+      Enum.flat_map(teams, fn team_id ->
+        {:ok, jobs} = JobList.all(team_id, %{"status" => %{"$IN" => ["open", "unknown"]}})
+        jobs
+      end)
 
     for profile <- profiles,
         dismissed = MapSet.new(JobParts.dismissed_jobs(profile.id)),

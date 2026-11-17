@@ -1,6 +1,6 @@
 defmodule ApiShared.Routes do
   @moduledoc """
-  The routes more than one app serves, written once (copied from mCart).
+  The routes more than one app serves, written once (copied from tCart).
 
   An app's router calls `shared_pipelines/0` at its top level, then
   `shared_routes/0` inside its own `/v1` scope, so one controller answers at
@@ -119,11 +119,14 @@ defmodule ApiShared.Routes do
       get "/media/:id", ApiShared.MediaController, :show
 
       # The bell (AQ-02 §7.1): each person their own, in both apps. Its
-      # settings (AQ-08 §11.4): the switches per group and channel.
+      # settings (AQ-08 §11.4): the switches per group and channel; AQ-10B
+      # §11.4: per kind, and snooze.
       scope "/notifications", ApiShared do
         pipe_through :aq_authenticated
         get "/settings", NotificationSettingsController, :show
         put "/settings/groups/:key", NotificationSettingsController, :put_group
+        put "/settings/kinds/:key", NotificationSettingsController, :put_kind
+        put "/settings/snooze", NotificationSettingsController, :put_snooze
         get "/", NotificationController, :index
         get "/count", NotificationController, :count
         get "/groups", NotificationController, :groups

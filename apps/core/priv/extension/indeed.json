@@ -1,0 +1,184 @@
+{
+  "site": "indeed",
+  "contract": 1,
+  "pages": {
+    "confirmation": {
+      "url": ["/indeedapply/form/post-apply", "re:/post-apply(?:[/?#]|$)"],
+      "ready": ["[data-testid='ia-PostApply']", ".ia-PostApply", ".ia-PostApply-header", "main h1"]
+    },
+    "job": {
+      "url": ["/viewjob", "re:[?&]v?jk=[^&]+"],
+      "ready": [
+        "#jobDescriptionText",
+        "[data-testid='jobsearch-JobInfoHeader-title']",
+        "h1.jobsearch-JobInfoHeader-title",
+        ".jobsearch-ViewJobLayout-jobDisplay"
+      ]
+    },
+    "search": {
+      "url": ["/jobs", "/q-"],
+      "ready": [
+        "#mosaic-jobResults",
+        ".jobsearch-ResultsList",
+        "[data-testid='jobsearch-ResultsList']"
+      ]
+    }
+  },
+  "fields": {
+    "title": {
+      "on": ["job", "confirmation"],
+      "css": [
+        "h1[data-testid='jobsearch-JobInfoHeader-title']",
+        "h1.jobsearch-JobInfoHeader-title",
+        ".jobsearch-JobInfoHeader-title-container h1",
+        "[data-testid='ia-JobInfoCard-title']",
+        ".ia-JobInfoCard-title",
+        ".ia-JobHeader-title"
+      ],
+      "read": "text",
+      "required": true
+    },
+    "company_name": {
+      "on": ["job", "confirmation"],
+      "css": [
+        "[data-testid='inlineHeader-companyName'] a",
+        "[data-testid='inlineHeader-companyName']",
+        "[data-company-name='true']",
+        "[data-testid='ia-JobInfoCard-company']",
+        ".ia-JobInfoCard-company",
+        ".ia-JobHeader-information span"
+      ],
+      "read": "text",
+      "required": true
+    },
+    "company_url": {
+      "on": "job",
+      "css": [
+        "[data-testid='inlineHeader-companyName'] a[href*='/cmp/']",
+        "[data-company-name='true'] a[href*='/cmp/']",
+        ".jobsearch-CompanyInfoContainer a[href*='/cmp/']"
+      ],
+      "read": "href",
+      "required": false
+    },
+    "location_text": {
+      "on": ["job", "confirmation"],
+      "css": [
+        "[data-testid='inlineHeader-companyLocation']",
+        "[data-testid='job-location']",
+        "#jobLocationText",
+        "[data-testid='ia-JobInfoCard-location']",
+        ".ia-JobInfoCard-location"
+      ],
+      "read": "text",
+      "required": false
+    },
+    "salary_text": {
+      "on": "job",
+      "css": [
+        "#salaryInfoAndJobType [data-testid='salaryInfo']",
+        "#salaryInfoAndJobType span:first-child",
+        "[aria-label='Pay'] li",
+        "#salaryGuide"
+      ],
+      "read": "text",
+      "required": false
+    },
+    "employment_text": {
+      "on": "job",
+      "css": [
+        "[aria-label='Job type'] li",
+        "#salaryInfoAndJobType [data-testid='jobTypeInfo']",
+        "#salaryInfoAndJobType span:last-child"
+      ],
+      "read": "text",
+      "required": false
+    },
+    "posted_text": {
+      "on": "job",
+      "css": [
+        "[data-testid='myJobsStateDate']",
+        ".jobsearch-JobMetadataFooter [data-testid='myJobsStateDate']",
+        ".jobsearch-HiringInsights-entry--age"
+      ],
+      "read": "text",
+      "required": false
+    },
+    "description_html": {
+      "on": "job",
+      "css": [
+        "#jobDescriptionText",
+        ".jobsearch-jobDescriptionText",
+        "[data-testid='jobsearch-JobComponent-description']"
+      ],
+      "read": "html",
+      "required": true
+    },
+    "indeed.easily_apply": {
+      "on": "job",
+      "css": ["#indeedApplyButton", ".indeed-apply-button", "[data-testid='indeedApply-badge']"],
+      "read": "present",
+      "required": false
+    },
+    "indeed.responsive_employer": {
+      "on": "job",
+      "css": ["[data-testid='responsiveEmployer']", ".responsiveEmployer"],
+      "read": "present",
+      "required": false
+    },
+    "indeed.urgently_hiring": {
+      "on": "job",
+      "css": ["[data-testid='urgentlyHiring']", ".urgentlyHiring"],
+      "read": "present",
+      "required": false
+    },
+    "indeed.job_type_text": {
+      "on": "job",
+      "css": [
+        "[aria-label='Job type'] li",
+        "[data-testid='jobDetails-jobType'] li",
+        "#salaryInfoAndJobType [data-testid='jobTypeInfo']"
+      ],
+      "read": "text",
+      "required": false
+    },
+    "indeed.work_setting_text": {
+      "on": "job",
+      "css": ["[aria-label='Work setting'] li", "[data-testid='jobDetails-workSetting'] li"],
+      "read": "text",
+      "required": false
+    }
+  },
+  "identity": {
+    "css": [
+      "[data-testid='gnav-AccountMenu-userEmail']",
+      ".gnav-AccountMenu-userEmail",
+      "#AccountMenu-dropdown [data-testid*='userEmail']",
+      "[data-gnav-element-name='AccountMenu'] .gnav-AccountMenu-userEmail"
+    ],
+    "read": "text"
+  },
+  "confirmation": {
+    "on": "confirmation",
+    "css": [
+      "[data-testid='ia-PostApply-header']",
+      ".ia-PostApply-header",
+      "[data-testid='ia-PostApply']",
+      ".ia-PostApply"
+    ],
+    "read": "present"
+  },
+  "apply": {
+    "on": "job",
+    "easy_css": [
+      "#indeedApplyButton",
+      ".indeed-apply-button",
+      ".jobsearch-IndeedApplyButton-newDesign button"
+    ],
+    "external_css": [
+      "#applyButtonLinkContainer a",
+      "button[aria-label*='company site']",
+      "a[aria-label*='company site']"
+    ]
+  }
+}

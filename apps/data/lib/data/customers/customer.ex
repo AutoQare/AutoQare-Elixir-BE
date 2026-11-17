@@ -32,6 +32,8 @@ defmodule Data.Customers.Customer do
     field(:ended_on, :date)
     field(:archived_at, :utc_datetime_usec)
     field(:team_ids, {:array, :binary_id}, virtual: true, default: [])
+    # P10b (AQ-10B §11.4): whether the reading staff member muted them; `nil` unread.
+    field(:muted, :boolean, virtual: true)
 
     belongs_to(:organisation, Organisation)
     belongs_to(:user, User)

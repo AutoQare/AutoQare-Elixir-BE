@@ -10,7 +10,7 @@ defmodule ApiTeam.JobControllerTest do
   @money ~w(min_minor max_minor currency period source is_estimate is_undisclosed text)
   @row ~w(id title team company source engagement workplace remote_scope onsite_locations money posted_on
           first_seen_at status
-          archived_at best_suggestion)
+          archived_at best_suggestion origin_kind alert)
   @columns ~w(source_url canonical_key source_job_id origin last_seen_at is_reposted poster_name description_md
               description_html seniority category openings allowed_countries allowed_regions required_timezones
               min_overlap_hours overlap_from_time overlap_to_time is_relocation_offered visa
@@ -22,7 +22,7 @@ defmodule ApiTeam.JobControllerTest do
            ~w(skills platform_details snapshots merged_from suggestions created_by last_changed leads
               hidden_leads signals can)
   @company ~w(id name domain website_url linkedin_url size_band industry hq_country notes_md open_jobs
-              created_by inserted_at)
+              created_by inserted_at time_zone time_zone_source)
   @suggestion ~w(profile customer score parts dismissed)
 
   setup do
@@ -134,12 +134,30 @@ defmodule ApiTeam.JobControllerTest do
   test "GET /jobs: a page of rows; PATCH; close with a stale from is 409 job_moved", c do
     job = job_fixture(scope_for(c.fiza), title: "Go Engineer")
 
-    page = body(call(c.muaz, :get, "/v1/jobs", %{team_id: c.backend.id, q: "go"}))
+    page = body(call(c.muaz, :get, "/v1/jobs?team_id=#{c.backend.id}&$where[q][$ILIKE]=go"))
     assert keys(page) == ["items", "next_cursor"]
     assert [%{"title" => "Go Engineer"} = row] = page["items"]
     assert keys(row) == Enum.sort(@row)
 
-    assert call(c.muaz, :get, "/v1/jobs", %{team_id: c.backend.id, sort: "money"}).status == 422
+    assert call(c.muaz, :get, "/v1/jobs?team_id=#{c.backend.id}&$order[money]=$DESC").status ==
+             422
+
+    refused = call(c.muaz, :get, "/v1/jobs?team_id=#{c.backend.id}&$where[colour][$EQUAL]=red")
+    assert refused.status == 422
+    assert body(refused)["error"]["code"] == "invalid_filter"
+    assert body(refused)["error"]["details"] == %{"colour" => ["is not a filter of this list"]}
+
+    filtered =
+      body(
+        call(
+          c.muaz,
+          :get,
+          "/v1/jobs?team_id=#{c.backend.id}&$where[status][$IN][]=open&$where[status][$IN][]=unknown" <>
+            "&$where[has_leads][$EQUAL]=false&$order[posted_on]=$DESC"
+        )
+      )
+
+    assert Enum.map(filtered["items"], & &1["title"]) == ["Go Engineer"]
 
     assert %{"workplace" => "remote"} =
              body(call(c.muaz, :patch, "/v1/jobs/#{job.id}", %{workplace: "remote"}))
@@ -195,7 +213,9 @@ defmodule ApiTeam.JobControllerTest do
     assert %{"archived_at" => at} = body(call(c.bilal, :post, "/v1/jobs/#{survivor.id}/archive"))
     assert is_binary(at)
 
-    assert body(call(c.bilal, :get, "/v1/jobs", %{team_id: c.backend.id, archived: "true"}))[
+    assert body(
+             call(c.bilal, :get, "/v1/jobs?team_id=#{c.backend.id}&$where[archived][$EQUAL]=true")
+           )[
              "items"
            ]
            |> length() == 1

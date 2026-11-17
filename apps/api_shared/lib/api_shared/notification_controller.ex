@@ -1,7 +1,9 @@
 defmodule ApiShared.NotificationController do
   @moduledoc """
-  The bell (AQ-02 §7.1), served by both apps: a person's own notifications,
-  their unread count, the groups for the chips, and marking read. Shapes
+  The bell (AQ-02 §7.1), served by both apps: a person's own notifications
+  (`GET /notifications?$where&cursor&limit`, `Data.Filters.Notifications`:
+  `unread`, `group`), their unread count, the groups for the chips, and
+  marking read. Shapes
   are `Core.Notifications`' (§7.6): the page `{items, next_cursor}`, the
   count `{unread}`, the groups `[{key, label}]`.
   """

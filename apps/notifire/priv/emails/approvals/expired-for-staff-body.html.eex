@@ -1,0 +1,7 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph("Nobody decided in time, so it expired.") %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Open the approval", @url) %>
+<%= link(@url) %>

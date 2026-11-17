@@ -7,8 +7,8 @@ defmodule ApiClient.Router do
   It includes the shared routes (`ApiShared.Routes`: `/info`, `/auth/*`,
   `/me/*`, `/media/*`) and adds the portal's own (AQ-01 §6.3): the
   customer's record, profiles, channels, documents and "who serves me";
-  their board (AQ-02 §7.3); their applications (AQ-04A §8.2); and what
-  waits on their approval (AQ-07 §11.2).
+  their board (AQ-02 §7.3); their applications (AQ-04A §8.2); what
+  waits on their approval (AQ-07 §11.2); and their *Home* (AQ-11 §7.4).
 
   **Isolation by construction** (PLAN §0): every route here runs behind
   `:aq_customer`, which pins the scope to the signed-in customer
@@ -43,6 +43,9 @@ defmodule ApiClient.Router do
 
     scope "/", ApiClient do
       pipe_through [:aq_authenticated, :aq_customer]
+
+      # AQ-11 §7.4: the customer's Home.
+      get "/home", HomeController, :show
 
       get "/customer", CustomerController, :show
       patch "/customer", CustomerController, :update

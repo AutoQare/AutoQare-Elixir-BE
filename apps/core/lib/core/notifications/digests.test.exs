@@ -43,7 +43,7 @@ defmodule Core.Notifications.DigestsTest do
 
     assert Digests.scan(@now) == 1
     assert [digest] = digests(c.qasim)
-    assert digest.title == "3 things you haven't read"
+    assert digest.title == "3 things waiting for you"
     assert digest.link_path == "/notifications?unread=1"
     assert digest.dedupe_key == "digest:#{c.qasim.id}:2026-11-12"
 
@@ -77,17 +77,21 @@ defmodule Core.Notifications.DigestsTest do
     # 07:55 in Karachi.
     assert Digests.scan(~U[2026-11-12 02:55:00.000000Z]) == 0
 
-    {:ok, _} = Data.Accounts.put_settings(c.qasim.id, %{digest_on: false})
+    {:ok, _} = Data.Accounts.put_settings(c.qasim.id, %{digest_frequency: :off})
     assert Digests.scan(@now) == 0
 
-    {:ok, _} = Data.Accounts.put_settings(c.qasim.id, %{digest_on: true})
+    # Weekly: only on Monday (the 12th is a Thursday).
+    {:ok, _} = Data.Accounts.put_settings(c.qasim.id, %{digest_frequency: :weekly})
+    assert Digests.scan(@now) == 0
+
+    {:ok, _} = Data.Accounts.put_settings(c.qasim.id, %{digest_frequency: :daily})
     preference_fixture(c.qasim, "tasks", %{digest: false})
 
     assert Digests.scan(@now) == 1
 
     assert [
              %{
-               title: "1 thing you haven't read",
+               title: "1 thing waiting for you",
                body: "Conversations · 1\n\nNew in Triage: Mei Chen"
              }
            ] =
@@ -104,7 +108,7 @@ defmodule Core.Notifications.DigestsTest do
     unread(c.org, c.qasim, "tasks.due_soon", "“Send the rate” is due tomorrow")
     assert Digests.scan(tomorrow) == 1
 
-    assert [_first, %{title: "1 thing you haven't read", body: body}] =
+    assert [_first, %{title: "1 thing waiting for you", body: body}] =
              c.qasim |> digests() |> Enum.sort_by(& &1.dedupe_key)
 
     assert body == "Tasks · 1\n\n“Send the rate” is due tomorrow"

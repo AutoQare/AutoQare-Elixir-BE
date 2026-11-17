@@ -1,6 +1,6 @@
 defmodule Core.Notifications.QuietHours do
   @moduledoc """
-  When a person's phone must not buzz (AQ-08 §7.3; copied from mCart's).
+  When a person's phone must not buzz (AQ-08 §7.3; copied from tCart's).
 
   **Quiet hours defer; they never drop** (PLAN §11). Push, email and pop-ups
   that fall inside the window wait for its end; the bell fills at once.

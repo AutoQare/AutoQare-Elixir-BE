@@ -3,7 +3,7 @@ defmodule Data.Repo.Migrations.CreateTaskChecklistItems do
 
   @moduledoc """
   A task's checklist (AQ-02 §5.1). `checked_at` and `checked_by_user_id`
-  rather than mCart's `is_checked`: one fact, and who did it. Ticked by
+  rather than tCart's `is_checked`: one fact, and who did it. Ticked by
   anyone who may move the task, and by the customer on a task given to them.
   """
 

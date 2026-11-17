@@ -22,6 +22,7 @@ defmodule Core.Accounts.Recovery do
   alias Core.Audit
   alias Core.Auth.Guardian
   alias Core.Mail
+  alias Core.Notifications.Account, as: AccountNotices
   alias Core.Plugs.RateLimit
   alias Data.Accounts
   alias Data.Accounts.User
@@ -96,8 +97,16 @@ defmodule Core.Accounts.Recovery do
            Accounts.get_live_token(token, [:reset_password], now) || {:error, :token_invalid},
          :ok <- Password.check(password) do
       Repo.transaction(fn -> write_reset(user, password, now) end)
+      |> sent()
     end
   end
+
+  defp sent({:ok, {value, events}}) do
+    :ok = Core.Notifications.send_events(events)
+    {:ok, value}
+  end
+
+  defp sent(other), do: other
 
   defp write_reset(user, password, now) do
     scope = Grants.scope_for(user)
@@ -108,7 +117,17 @@ defmodule Core.Accounts.Recovery do
       do: Audit.record(%{scope | via: :system}, "password_reset", user, now: now)
 
     {:ok, _count} = Guardian.revoke_all_for(user)
-    Accounts.with_person(user)
+
+    # AQ-10B §5.1 A7: a changed password is told, whoever changed it.
+    events =
+      AccountNotices.security(
+        user,
+        Scope.organisation_id(scope),
+        :password_changed,
+        now
+      )
+
+    {Accounts.with_person(user), events}
   end
 
   @doc """
@@ -139,6 +158,8 @@ defmodule Core.Accounts.Recovery do
              new_email: address
            ) do
       Mail.enqueue!(%{kind: :email_change, subject_id: row.id, secret: token})
+      # AQ-10B §5.1 A8: and a notice to the old address.
+      Mail.enqueue!(%{kind: :email_change_notice, subject_id: row.id})
     end
   end
 
@@ -152,6 +173,7 @@ defmodule Core.Accounts.Recovery do
     case Accounts.get_live_token(token, [:change_email], now) do
       %UserToken{user: %User{id: ^user_id}} = row ->
         Repo.transaction(fn -> write_email_change(scope, row, now) end)
+        |> sent()
 
       _not_mine_or_dead ->
         {:error, :token_invalid}
@@ -170,7 +192,22 @@ defmodule Core.Accounts.Recovery do
             now: now
           )
 
-        user
+        # AQ-10B §5.1 A9: the person told, and the old address mailed.
+        Mail.enqueue!(%{
+          kind: :email_changed,
+          subject_id: user.id,
+          options: %{old_email: before["email"], new_email: user.email}
+        })
+
+        events =
+          AccountNotices.security(
+            user,
+            Scope.organisation_id(scope),
+            {:email_changed, user.email},
+            now
+          )
+
+        {user, events}
 
       # A changeset here means the stored address stopped being valid, which
       # nothing can produce today. It is still not a dead link.

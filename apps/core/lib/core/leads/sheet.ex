@@ -17,6 +17,8 @@ defmodule Core.Leads.Sheet do
   alias Core.Contacts.LeadLinks
   alias Core.Jobs.Sheet, as: JobSheet
   alias Core.Leads.{Pipelines, Signals}
+  alias Core.Notifications.LeadWatch
+  alias Core.Notifications.Mutes
   alias Core.Tasks.{Cards, Person, Visibility}
   alias Data.LeadNotes
   alias Data.Leads, as: Store
@@ -123,8 +125,10 @@ defmodule Core.Leads.Sheet do
       created_by: Person.view(lead.created_by_user),
       can: can(scope, lead),
       tasks: tasks(scope, lead, now),
-      notes_count: Map.get(LeadNotes.counts([lead.id]), lead.id, 0)
+      notes_count: Map.get(LeadNotes.counts([lead.id]), lead.id, 0),
+      muted: Mutes.lead_muted?(scope, lead.id)
     })
+    |> Map.merge(LeadWatch.summary(scope, lead.id))
     |> Map.merge(conversation_parts(scope, lead, now))
   end
 
@@ -336,14 +340,15 @@ defmodule Core.Leads.Sheet do
 
   # The customer reads no reason (a hold's, an apply-again's) and no note,
   # and no word about the extension (AQ-05 §12.2): a press there is the
-  # staff member's, as any other.
+  # staff member's, as any other — nor about an import (AQ-12 §11.4): the
+  # application reads as the person's who made it.
   defp customer_event(e, customer, names?) do
     %{
       id: e.id,
       kind: e.kind,
       occurred_at: e.occurred_at,
       actor: %{
-        kind: if(e.actor_kind == :extension, do: :user, else: e.actor_kind),
+        kind: if(e.actor_kind in [:extension, :import], do: :user, else: e.actor_kind),
         person: Person.for_customer(e.actor_user, customer, names?)
       },
       from_label: e.from_label,

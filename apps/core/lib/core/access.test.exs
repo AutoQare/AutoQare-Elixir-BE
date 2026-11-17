@@ -200,4 +200,33 @@ defmodule Core.AccessTest do
       assert Access.why_not(member(), :fly, :moon) == {:error, :not_found}
     end
   end
+
+  describe "dashboards (AQ-11 §6)" do
+    test "My numbers is any staff member's; Team a team lead's for their teams; All teams the system admin's" do
+      for s <- [admin(), lead(), member()], do: assert(Access.can?(s, :read, {:dashboard, :me}))
+      assert Access.why_not(nobody(), :read, {:dashboard, :me}) == {:error, :not_found}
+
+      assert Access.can?(admin(), :read, {:dashboard, :all})
+      assert Access.can?(admin(), :read, {:dashboard, %{team_id: "frontend"}})
+      assert Access.can?(lead(), :read, {:dashboard, %{team_id: "backend"}})
+
+      for {s, subject} <- [
+            {lead(), %{team_id: "frontend"}},
+            {lead(), :all},
+            {member(), %{team_id: "backend"}},
+            {member(), :all}
+          ],
+          do: assert(Access.why_not(s, :read, {:dashboard, subject}) == {:error, :not_found})
+    end
+
+    test "a member's daily target is set by the team's leads and the system admin" do
+      assert Access.can?(admin(), :set_target, {:team, @backend})
+      assert Access.can?(lead(), :set_target, {:team, @backend})
+
+      assert {:error, {:forbidden, _words}} =
+               Access.why_not(member(), :set_target, {:team, @backend})
+
+      assert Access.why_not(lead(), :set_target, {:team, @frontend}) == {:error, :not_found}
+    end
+  end
 end

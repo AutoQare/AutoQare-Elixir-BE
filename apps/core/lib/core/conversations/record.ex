@@ -18,13 +18,15 @@ defmodule Core.Conversations.Record do
     staff note — a person's act (activity), the extension's with the
     person (P5); an inbound one tells the lead's owner
     (`conversations.reply_received`) and clears its follow-ups
-    (`Core.Leads.FollowUps`).
+    (`Core.Leads.FollowUps`); an inbound reply to one of ours writes
+    `replied` with its delay (AQ-10 §6.1, `Core.Behaviour.Sources`).
 
   Each answers the realtime events after commit: `message_added` and
   `lead_updated` on the lead, `triage_changed` on the team when the
   conversation is in its triage.
   """
 
+  alias Core.Behaviour.Sources
   alias Core.Conversations.Notices
   alias Core.Leads
   alias Core.Leads.{Ledger, Words}
@@ -105,6 +107,7 @@ defmodule Core.Conversations.Record do
   @spec message(Scope.t(), Conversation.t(), Message.t(), DateTime.t()) :: list()
   def message(%Scope{} = scope, %Conversation{} = c, %Message{} = m, %DateTime{} = now) do
     :ok = Store.touch(c.id, m.sent_at)
+    :ok = Sources.message(scope, m, now)
     leads = leads(c)
     m = Data.Repo.preload(m, [:from_contact])
 

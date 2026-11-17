@@ -22,7 +22,7 @@ defmodule Core.Conversations.Messages do
   alias Core.Access
   alias Core.Audit
   alias Core.Conversations
-  alias Core.Conversations.Record
+  alias Core.Conversations.{Notices, Record}
   alias Core.Leads
   alias Core.Tasks.Write
   alias Data.Contacts, as: ContactStore
@@ -108,9 +108,20 @@ defmodule Core.Conversations.Messages do
            }) do
       :ok = Store.add_participant(c.id, fields[:from_contact_id])
       {:ok, _audit} = Audit.record(scope, "created", message, after: snapshot(message), now: now)
-      {:ok, c, [linked, Record.message(scope, c, message, now)]}
+
+      {:ok, c,
+       [linked, Record.message(scope, c, message, now), triage(scope, target, c, message)]}
     end
   end
+
+  # AQ-10B G8: a hand-typed message that starts a team's conversation is new
+  # in Triage, as a forwarded mail's is.
+  defp triage(scope, {:team, _team}, c, message) do
+    message = Data.Repo.preload(message, :from_contact)
+    Notices.triage_new(scope, c, Notices.who(message), nil)
+  end
+
+  defp triage(_scope, _target, _c, _message), do: []
 
   # A lead's new conversation is linked by hand; a team's new one is triage.
   defp conversation(_scope, {:conversation, c}, _fields, _now), do: {:ok, c, []}

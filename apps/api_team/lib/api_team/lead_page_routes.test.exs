@@ -62,8 +62,20 @@ defmodule ApiTeam.LeadPageRoutesTest do
     assert [%{"kind" => "note_added", "note" => "N", "note_id" => _}, %{"kind" => "applied"}] =
              page["items"]
 
-    moves = body(call(c.fiza, :get, "/v1/leads/#{id}/history?kind=applied,stage_moved"))
+    moves =
+      body(
+        call(
+          c.fiza,
+          :get,
+          "/v1/leads/#{id}/history?$where[kind][$IN][]=applied&$where[kind][$IN][]=stage_moved"
+        )
+      )
+
     assert Enum.map(moves["items"], & &1["kind"]) == ["applied"]
+
+    refused = call(c.fiza, :get, "/v1/leads/#{id}/history?$where[kind][$GT]=applied")
+    assert refused.status == 422 and code(refused) == "invalid_filter"
+    assert body(refused)["error"]["details"] == %{"kind" => ["can't be filtered with $GT"]}
   end
 
   test "the sheet's P4b keys; Log follow-up with {from, note}; labels with {label_ids}", c do
@@ -96,9 +108,14 @@ defmodule ApiTeam.LeadPageRoutesTest do
   end
 
   test "the Tracker: the page and the row's exact keys; the CSV with a BOM", c do
-    page = body(call(c.fiza, :get, "/v1/tracker?team_id=#{c.backend.id}&sort=title&group=state"))
-    assert keys(page) == ~w(groups items next_cursor total)
+    page =
+      body(
+        call(c.fiza, :get, "/v1/tracker?team_id=#{c.backend.id}&$order[title]=$ASC&group=state")
+      )
+
+    assert keys(page) == ~w(applications groups items next_cursor total)
     assert page["total"] == 1
+    assert page["applications"] == nil
     [row] = page["items"]
     assert keys(row) == Enum.sort(@tracker_row)
     assert keys(row["quiet"]) == ~w(archives_on warn)
@@ -111,8 +128,40 @@ defmodule ApiTeam.LeadPageRoutesTest do
     assert disposition =~ "attachment; filename=\"tracker-backend-squad-"
     assert String.starts_with?(csv.resp_body, "﻿Applied,")
 
-    assert code(call(c.fiza, :get, "/v1/tracker?team_id=#{c.backend.id}&sort=nope")) ==
-             "validation_failed"
+    assert code(call(c.fiza, :get, "/v1/tracker?team_id=#{c.backend.id}&$order[nope]=$ASC")) ==
+             "invalid_filter"
+
+    narrowed =
+      body(
+        call(
+          c.fiza,
+          :get,
+          "/v1/tracker?team_id=#{c.backend.id}&$where[state][$IN][]=todo&$where[quiet][$EQUAL]=30"
+        )
+      )
+
+    assert narrowed["total"] == 0
+
+    mine =
+      body(
+        call(
+          c.fiza,
+          :get,
+          "/v1/tracker?team_id=#{c.backend.id}&$where[applied_by][$EQUAL]=me" <>
+            "&$where[stage_kind][$IN][]=applied&$where[missing][$IN][]=money"
+        )
+      )
+
+    assert mine["total"] == 1
+    assert mine["applications"] == 1
+
+    refused = call(c.fiza, :get, "/v1/tracker?team_id=#{c.backend.id}&$where[colour]=red")
+    assert refused.status == 422 and code(refused) == "invalid_filter"
+    assert body(refused)["error"]["details"] == %{"colour" => ["is not a filter of this list"]}
+
+    csv = call(c.fiza, :get, "/v1/tracker.csv?team_id=#{c.backend.id}&$where[state]=done")
+    assert csv.status == 200
+    assert csv.resp_body |> String.trim_trailing() |> String.split("\r\n") |> length() == 1
   end
 
   test "bulk: {done, refused: [{id, code, message}]}", c do
@@ -200,7 +249,14 @@ defmodule ApiTeam.LeadPageRoutesTest do
 
   test "the board with lanes and older", c do
     board =
-      body(call(c.fiza, :get, "/v1/leads/board?team_id=#{c.backend.id}&lane=owner&older=true"))
+      body(
+        call(
+          c.fiza,
+          :get,
+          "/v1/leads/board?team_id=#{c.backend.id}&lane=owner&older=true" <>
+            "&$where[owner][$EQUAL]=me&$where[archived][$EQUAL]=false"
+        )
+      )
 
     assert board["lane"] == "owner"
 

@@ -1,0 +1,14 @@
+Hi <%= @first_name || "there" %>,
+
+<%= @title %>
+
+Your team uses AutoQare to share your job search with you: applications, tasks, meetings.
+<%= if @body do %>
+
+<%= @body %>
+<% end %>
+
+<%= facts_text(@facts) %>
+<%= if @url do %>Accept the invitation: <%= @url %><% end %>
+
+The link works once and expires on <%= @expires_on %>.

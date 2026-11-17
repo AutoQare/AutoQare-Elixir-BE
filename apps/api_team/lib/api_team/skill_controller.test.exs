@@ -7,7 +7,7 @@ defmodule ApiTeam.SkillControllerTest do
     %{org: org, lead: member_fixture(team, :lead), member: member_fixture(team, :member)}
   end
 
-  test "GET /skills?q, POST /skills (slug from the name, unique), archive by a lead", %{
+  test "GET /skills?$where, POST /skills (slug from the name, unique), archive by a lead", %{
     org: org,
     lead: lead,
     member: member
@@ -27,7 +27,14 @@ defmodule ApiTeam.SkillControllerTest do
 
     conn = call(member, :get, "/v1/skills")
     assert Enum.map(body(conn), & &1["name"]) == ["Node.js", "Elixir"]
-    assert [%{"name" => "Elixir"}] = body(call(member, :get, "/v1/skills?q=eli"))
+    assert [%{"name" => "Elixir"}] = body(call(member, :get, "/v1/skills?$where[q][$ILIKE]=eli"))
+
+    assert [%{"name" => "Node.js"}] =
+             body(call(member, :get, "/v1/skills?$where[category][$IN][]=frameworks"))
+
+    refused = call(member, :get, "/v1/skills?$where[slug][$EQUAL]=elixir")
+    assert refused.status == 422 and code(refused) == "invalid_filter"
+    assert body(refused)["error"]["details"] == %{"slug" => ["is not a filter of this list"]}
 
     assert call(member, :post, "/v1/skills/#{id}/archive").status == 403
     assert body(call(lead, :post, "/v1/skills/#{id}/archive"))["archived_at"]

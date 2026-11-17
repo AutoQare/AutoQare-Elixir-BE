@@ -3,7 +3,7 @@ import Config
 # LOCAL_IP (the workspace's .env, beside the three repos; the aq-backend launcher sources it): this
 # Mac's address on the local network. Set, the backend listens on every address, the apps opened at
 # that address may call it, and email and invitation links open there, so others on the network
-# can test; empty, everything stays on localhost. mCart's way.
+# can test; empty, everything stays on localhost. tCart's way.
 local_ip = String.trim(System.get_env("LOCAL_IP", ""))
 dev_host = if local_ip == "", do: "localhost", else: local_ip
 
@@ -19,7 +19,7 @@ config :data, Data.Repo,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
 
-# 4100 is clear of mCart's 4001 and 5720–5729 (PLAN §15.1), so both run at
+# 4100 is clear of tCart's 4001 and 5720–5729 (PLAN §15.1), so both run at
 # once. Loopback only, unless LOCAL_IP is set (above).
 config :api, Api.Endpoint,
   http: [
@@ -52,6 +52,7 @@ config :api,
 app_urls = [console: "http://#{dev_host}:5800", portal: "http://#{dev_host}:5801"]
 config :core, :app_urls, app_urls
 config :notifire, :app_urls, app_urls
+config :notifire, api_url: "http://#{dev_host}:4100"
 
 # Mail is kept in the local in-memory mailbox rather than sent; read it at
 # http://localhost:4100/dev/mailbox (`Api.Router`, dev only).

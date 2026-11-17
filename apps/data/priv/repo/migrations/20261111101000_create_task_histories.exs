@@ -2,7 +2,7 @@ defmodule Data.Repo.Migrations.CreateTaskHistories do
   use Ecto.Migration
 
   @moduledoc """
-  A task's activity (AQ-02 §5.1; mCart's): **one row per changed field**,
+  A task's activity (AQ-02 §5.1; tCart's): **one row per changed field**,
   the rows of one save sharing a `change_group_id`, the labels resolved and
   **frozen at write** — renaming a stage never rewrites what the log said.
   A log, never the state. Which rows the customer reads is decided by

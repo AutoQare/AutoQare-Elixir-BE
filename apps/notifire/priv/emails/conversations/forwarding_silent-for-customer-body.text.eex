@@ -1,0 +1,14 @@
+Hi <%= @first_name || "there" %>,
+
+<%= @title %>
+
+No mail has reached your team from your Gmail for 14 days.
+<%= if @body do %>
+
+<%= @body %>
+<% end %>
+
+<%= facts_text(@facts) %>
+<%= if @url do %>Open AutoQare: <%= @url %><% end %>
+
+Check that your Gmail still forwards to your team’s address.

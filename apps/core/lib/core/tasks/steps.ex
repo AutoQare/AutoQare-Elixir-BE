@@ -51,14 +51,15 @@ defmodule Core.Tasks.Steps do
          :ok <- may_tick(scope, task, step) do
       at = if step.done_at, do: nil, else: now
 
-      change(scope, task, now, fn _group ->
-        ticked = TaskParts.tick(step, at, Scope.user_id(scope))
-
-        {:ok,
-         [Checklist.tick_line(:step, step.id, label(step, task), step.done_at, ticked.done_at)],
-         []}
-      end)
+      change(scope, task, now, fn _group -> ticked(scope, task, step, at) end)
     end
+  end
+
+  defp ticked(scope, task, step, at) do
+    ticked = TaskParts.tick(step, at, Scope.user_id(scope))
+    line = Checklist.tick_line(:step, step.id, label(step, task), step.done_at, ticked.done_at)
+    # AQ-10B §5.2 T10: ticked done by someone else.
+    {:ok, [line], if(ticked.done_at, do: Notices.step_done(scope, task, ticked), else: [])}
   end
 
   defp may_tick(scope, task, step) do

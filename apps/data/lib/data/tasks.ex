@@ -15,6 +15,9 @@ defmodule Data.Tasks do
 
   import Ecto.Query, warn: false
 
+  alias Data.Filters
+  alias Data.Filters.Tasks, as: TaskFilters
+  alias Data.Filters.TasksSort
   alias Data.Repo
   alias Data.Tasks.{Comment, Participant, Relation, Reply, Step, Task, TaskMedia}
 
@@ -103,65 +106,68 @@ defmodule Data.Tasks do
   def sheet(%Task{} = task), do: Repo.preload(task, @sheet, force: true)
 
   @doc """
-  The tasks `filter` sees, with what a card shows. Options: `view`, a list
-  of narrowings that all apply (`{:team, team_id}`, `{:mine, user_id}`,
-  `{:watching, user_id}`, `{:customer, customer_id}`; `:all` or `[]` for
-  none), `archived` (only the archived when true; never them otherwise).
+  The live tasks `filter` sees, with what a card shows, oldest first: the
+  portal's board and the dashboards. `view: [{:mine, user_id}]` keeps the
+  person's (`Data.Filters.Tasks.mine/1`, the board's *Mine*).
   """
   @spec list(map(), keyword()) :: [Task.t()]
   def list(filter, opts \\ []) do
     Task
     |> visible(filter)
-    |> view(Keyword.get(opts, :view, :all))
-    |> archived(Keyword.get(opts, :archived, false))
+    |> where([t], is_nil(t.archived_at))
+    |> view(Keyword.get(opts, :view, []))
     |> order_by([t], asc: t.inserted_at, asc: t.id)
     |> preload(^@card)
     |> Repo.all()
   end
 
-  defp view(query, :all), do: query
-  defp view(query, views) when is_list(views), do: Enum.reduce(views, query, &view(&2, &1))
-  defp view(query, {:team, team_id}), do: where(query, [t], t.team_id == ^team_id)
-  defp view(query, {:customer, id}), do: where(query, [t], t.customer_id == ^id)
+  defp view(query, views),
+    do: Enum.reduce(views, query, fn {:mine, me}, q -> where(q, ^TaskFilters.mine(me)) end)
 
-  defp view(query, {:watching, me}) do
-    watched = from(p in Participant, where: p.user_id == ^me and p.is_watcher, select: p.task_id)
-    where(query, [t], t.id in subquery(watched))
+  @doc """
+  One team's board (AQ-02 §7.2, AQ-11B §11.4): the tasks `filter` sees in
+  the team, narrowed by `where` (the list's `$where`, `Data.Filters.Tasks`;
+  only the live unless it asks for `archived`) and ordered by `order` (its
+  `$order`, `Data.Filters.TasksSort`; by due when empty), then the due key,
+  the oldest and the id. `preload` defaults to what a card shows.
+  `{:ok, tasks}`, or the 422 `invalid_filter`.
+  """
+  @spec board(map(), binary(), term(), term(), Filters.context(), list()) ::
+          {:ok, [Task.t()]} | {:error, term()}
+  def board(filter, team_id, where, order, context, preload \\ @card) do
+    base = Task |> visible(filter) |> where([t], t.team_id == ^team_id)
+    where = Filters.default(where, "archived", %{"$EQUAL" => false})
+
+    with {:ok, query} <- Filters.where(base, TaskFilters, where, context),
+         {:ok, pairs} <- Filters.order(TasksSort, order) do
+      pairs = if pairs == [], do: [{"due", "$ASC"}], else: pairs
+
+      ties = [
+        asc_nulls_last: TasksSort.due_key(),
+        asc: dynamic([t], t.inserted_at),
+        asc: dynamic([t], t.id)
+      ]
+
+      {:ok,
+       query
+       |> order_by(^(TasksSort.build(Map.new(pairs)) ++ ties))
+       |> preload(^preload)
+       |> Repo.all()}
+    end
   end
 
-  # Mine (QP2-16): assigned to me, my open steps, and what I wrote — the
-  # context keeps my own only when nobody else is on it.
-  defp view(query, {:mine, me}) do
-    assigned =
-      from(p in Participant, where: p.user_id == ^me and not is_nil(p.level), select: p.task_id)
+  @doc """
+  Up to 20 tasks `filter` sees, the most recently changed first: the
+  relation picker, narrowed by `where` (`Data.Filters.Tasks`: its `q`, and
+  only the live unless it asks for `archived`).
+  """
+  @spec search(map(), term(), Filters.context()) :: {:ok, [Task.t()]} | {:error, term()}
+  def search(filter, where, context) do
+    where = Filters.default(where, "archived", %{"$EQUAL" => false})
+    base = Task |> visible(filter) |> order_by([t], desc: t.updated_at, desc: t.id) |> limit(20)
 
-    steps =
-      from(s in Step,
-        where: s.assignee_user_id == ^me and is_nil(s.done_at),
-        select: s.task_id
-      )
-
-    where(
-      query,
-      [t],
-      t.author_user_id == ^me or t.id in subquery(assigned) or t.id in subquery(steps)
-    )
-  end
-
-  defp archived(query, true), do: where(query, [t], not is_nil(t.archived_at))
-  defp archived(query, _live), do: where(query, [t], is_nil(t.archived_at))
-
-  @doc "Up to 20 live tasks `filter` sees whose title matches `q`: the relation picker."
-  @spec search(map(), String.t() | nil) :: [Task.t()]
-  def search(filter, q) do
-    like = "%" <> String.replace(q || "", ~r/[%_\\]/, "") <> "%"
-
-    Task
-    |> visible(filter)
-    |> where([t], is_nil(t.archived_at) and ilike(t.title, ^like))
-    |> order_by([t], desc: t.updated_at)
-    |> limit(20)
-    |> Repo.all()
+    with {:ok, query} <- Filters.where(base, TaskFilters, where, context),
+         do: {:ok, Repo.all(query)}
   end
 
   @doc "Live comments and replies per task, as `%{task_id => n}`; `staff_only: false` counts what the customer reads."

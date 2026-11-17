@@ -5,6 +5,9 @@ defmodule Data.Repo.Migrations.CreateOrganisationSettings do
   The prototype's timings as data (AQ-01 §4.2; PLAN §6.7, §6.8, §10.5), 1:1
   with the organisation. Code defaults when no row; every value is checked
   into 1–365 days.
+
+  **P10b (AQ-10B §11.4, QP10b-9):** `help_email` and `postal_address`, what
+  every email's footer says when they are set.
   """
 
   @days ~w(follow_up_gap_days max_follow_ups no_response_days similar_window_days
@@ -26,6 +29,9 @@ defmodule Data.Repo.Migrations.CreateOrganisationSettings do
       add(:purge_after_days, :integer, null: false, default: 90)
       add(:warning_days, :integer, null: false, default: 7)
       add(:observation_retention_days, :integer, null: false, default: 180)
+      add(:help_email, :text)
+      add(:postal_address, :text)
+      add(:working_days, {:array, :smallint}, null: false, default: fragment("'{1,2,3,4,5}'"))
 
       timestamps()
     end
@@ -37,6 +43,24 @@ defmodule Data.Repo.Migrations.CreateOrganisationSettings do
         )
       )
     end
+
+    create(
+      constraint(:organisation_settings, :help_email_short,
+        check: "help_email IS NULL OR char_length(help_email) <= 254"
+      )
+    )
+
+    create(
+      constraint(:organisation_settings, :postal_address_short,
+        check: "postal_address IS NULL OR char_length(postal_address) <= 500"
+      )
+    )
+
+    create(
+      constraint(:organisation_settings, :working_days_known,
+        check: "working_days <@ ARRAY[1,2,3,4,5,6,7]::smallint[]"
+      )
+    )
 
     execute(
       "CREATE TRIGGER touch_updated_at BEFORE UPDATE ON organisation_settings " <>

@@ -1,10 +1,10 @@
 defmodule Core.Leads.History do
   @moduledoc """
-  The lead page's History (AQ-04B §8.1): `GET /leads/:id/history?kind&before`,
-  the ledger newest first, a keyset page of `event`s. `kind` is a comma
-  list of `lead_event_kinds` (the chips: *Moves*, *Notes*, *Tasks*,
-  *Follow-ups*, *System* are the client's groupings of them); `before` is
-  the id of the last event seen. Whoever on the staff reads the lead reads
+  The lead page's History (AQ-04B §8.1): `GET /leads/:id/history?$where&before`,
+  the ledger newest first, a keyset page of `event`s. `$where` is
+  `Data.Filters.History`'s (`kind {$IN: [lead_event_kinds]}`; the chips:
+  *Moves*, *Notes*, *Tasks*, *Follow-ups*, *System* are the client's
+  groupings of them); `before` is the id of the last event seen. Whoever on the staff reads the lead reads
   its History; the customer reads theirs in the portal's sheet (its
   customer-visible rows, without reasons), so here a customer finds nothing.
   """
@@ -13,7 +13,6 @@ defmodule Core.Leads.History do
   alias Core.Leads.Sheet
   alias Data.Leads, as: Store
   alias Data.Scope
-  alias Data.Vocabulary
 
   @page 50
 
@@ -24,10 +23,8 @@ defmodule Core.Leads.History do
 
     with :ok <- if(Scope.customer?(scope), do: {:error, :not_found}, else: :ok),
          {:ok, lead} <- Leads.fetch(scope, :read, lead_id),
-         {:ok, kinds} <- kinds(params["kind"]),
-         {:ok, before} <- before(lead, params["before"]) do
-      events = Store.history(lead.id, kinds: kinds, before: before, limit: @page)
-
+         {:ok, before} <- before(lead, params["before"]),
+         {:ok, events} <- Store.history(lead.id, params["$where"], before: before, limit: @page) do
       {page, more} = Enum.split(events, @page)
 
       {:ok,
@@ -36,17 +33,6 @@ defmodule Core.Leads.History do
          next_cursor: if(more == [], do: nil, else: List.last(page).id)
        }}
     end
-  end
-
-  defp kinds(nil), do: {:ok, []}
-  defp kinds(""), do: {:ok, []}
-
-  defp kinds(value) do
-    values = value |> to_string() |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
-
-    if Enum.all?(values, &(&1 in Vocabulary.lead_event_kinds())),
-      do: {:ok, Enum.map(values, &String.to_atom/1)},
-      else: Leads.invalid("kind", "has a value that is not one of the list")
   end
 
   defp before(_lead, nil), do: {:ok, nil}

@@ -13,7 +13,7 @@ defmodule ApiTeam.CompanyController do
   action_fallback ApiShared.FallbackController
 
   def index(conn, params) do
-    with {:ok, list} <- Companies.search(conn.assigns.scope, params["q"]),
+    with {:ok, list} <- Companies.search(conn.assigns.scope, params),
          do: json(conn, JobsJSON.companies(list))
   end
 
@@ -24,7 +24,7 @@ defmodule ApiTeam.CompanyController do
   end
 
   def show(conn, %{"id" => id}) do
-    with {:ok, company} <- Companies.get(conn.assigns.scope, id),
+    with {:ok, company} <- Companies.get(conn.assigns.scope, id, Clock.now()),
          do: json(conn, JobsJSON.company(company))
   end
 

@@ -2,7 +2,9 @@ defmodule Api.ConversationChannelsTest do
   @moduledoc """
   AQ-06 §11.4, §11.6 over real channels, after commit and ids only:
   `message_added {lead, conversation}` on `lead:`; `meeting_changed {lead,
-  meeting}` on `lead:` and `customer:`; `triage_changed {team}` on `team:`.
+  meeting}` on `lead:` and `customer:`; `triage_changed {team}` on `team:`;
+  AQ-11 §7.4: a message landing on a lead sends `lead_updated {lead}` on its
+  team's topic, so an open dashboard re-reads.
   """
 
   use Api.ChannelCase, async: true
@@ -91,5 +93,25 @@ defmodule Api.ConversationChannelsTest do
 
     {:ok, _} = Triage.ignore(scope_for(c.fiza), conv.id, @now)
     assert_push "triage_changed", %{team: ^team_id}
+  end
+
+  test "team: hears lead_updated when a message lands on one of its leads", c do
+    id = c.lead.id
+    {:ok, _, _} = subscribe_and_join(socket_for(c.hira), Api.TeamChannel, "team:" <> c.backend.id)
+
+    {:ok, _conv} =
+      Messages.create(
+        scope_for(c.fiza),
+        %{
+          "lead_id" => id,
+          "direction" => "in",
+          "from" => %{"kind" => "text", "text" => "Mei Chen <mei@corvid.example>"},
+          "sent_at" => "2026-11-10T09:00:00Z",
+          "body_md" => "Can we talk on Friday?"
+        },
+        @now
+      )
+
+    assert_push "lead_updated", %{lead: ^id}
   end
 end

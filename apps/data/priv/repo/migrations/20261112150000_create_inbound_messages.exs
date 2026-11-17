@@ -12,6 +12,11 @@ defmodule Data.Repo.Migrations.CreateInboundMessages do
   channel. `(provider, provider_message_id)` is unique: a provider's retry
   of the same delivery adds no row. `message_id` is the message a landed
   (or duplicate) mail is. Kept 30 days (`Core.Workers.InboundSweep`).
+
+  AQ-12 §7, §11.4: a job-alert email is read, not landed as a
+  conversation; its row keeps how many pool jobs it gave in `alert_jobs`
+  (null for every other mail), with `landed` for the first delivery and
+  `duplicate` for the same alert again.
   """
 
   @providers ~w(postmark dev)
@@ -30,6 +35,7 @@ defmodule Data.Repo.Migrations.CreateInboundMessages do
       add(:message_id, references(:messages, type: :uuid, on_delete: :nilify_all))
       add(:bytes, :bigint, null: false, default: 0)
       add(:received_at, :timestamptz, null: false)
+      add(:alert_jobs, :smallint)
     end
 
     create(
@@ -41,6 +47,12 @@ defmodule Data.Repo.Migrations.CreateInboundMessages do
     )
 
     create(constraint(:inbound_messages, :bytes_whole, check: "bytes >= 0"))
+
+    create(
+      constraint(:inbound_messages, :alert_jobs_counted,
+        check: "alert_jobs IS NULL OR (alert_jobs >= 0 AND outcome IN ('landed','duplicate'))"
+      )
+    )
 
     create(
       unique_index(:inbound_messages, [:provider, :provider_message_id],

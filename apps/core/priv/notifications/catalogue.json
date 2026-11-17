@@ -1,0 +1,1607 @@
+[
+  {
+    "id": "A1",
+    "event": "Invitation sent",
+    "kind": null,
+    "audience": "staff",
+    "who": "the invitee",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A1",
+    "event": "Invitation sent",
+    "kind": null,
+    "audience": "customer",
+    "who": "the invitee",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A2",
+    "event": "Invitation unanswered after 3 days, and the day before it expires",
+    "kind": null,
+    "audience": "staff",
+    "who": "the invitee",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "A2",
+    "event": "Invitation unanswered after 3 days, and the day before it expires",
+    "kind": null,
+    "audience": "customer",
+    "who": "the invitee",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "A3",
+    "event": "Invitation accepted: staff joined, a customer joined the portal",
+    "kind": "account.invitation_accepted",
+    "audience": "staff",
+    "who": "the inviter; for a customer also the team leads and profile owners",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "A4",
+    "event": "Invitation expired unused",
+    "kind": "account.invitation_expired",
+    "audience": "staff",
+    "who": "the inviter",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "A5",
+    "event": "Welcome, after the first sign-in",
+    "kind": "account.welcome",
+    "audience": "staff",
+    "who": "the person",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A5",
+    "event": "Welcome, after the first sign-in",
+    "kind": "account.welcome",
+    "audience": "customer",
+    "who": "the person",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A6",
+    "event": "Password reset asked",
+    "kind": null,
+    "audience": "staff",
+    "who": "the person",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A6",
+    "event": "Password reset asked",
+    "kind": null,
+    "audience": "customer",
+    "who": "the person",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A7",
+    "event": "Password changed",
+    "kind": "account.security",
+    "audience": "staff",
+    "who": "the person",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A7",
+    "event": "Password changed",
+    "kind": "account.security",
+    "audience": "customer",
+    "who": "the person",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A8",
+    "event": "Email change asked: confirm at the new address, and a notice to the old one",
+    "kind": null,
+    "audience": "staff",
+    "who": "both addresses",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A8",
+    "event": "Email change asked: confirm at the new address, and a notice to the old one",
+    "kind": null,
+    "audience": "customer",
+    "who": "both addresses",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A9",
+    "event": "Email changed",
+    "kind": "account.security",
+    "audience": "staff",
+    "who": "the person; the old address by direct email",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A9",
+    "event": "Email changed",
+    "kind": "account.security",
+    "audience": "customer",
+    "who": "the person; the old address by direct email",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A10",
+    "event": "Signed out everywhere; suspended; restored; system admin handed on",
+    "kind": "account.security",
+    "audience": "staff",
+    "who": "the person (and the old admin)",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A11",
+    "event": "Added to or removed from a team; role changed",
+    "kind": "account.team_changed",
+    "audience": "staff",
+    "who": "the person",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": "offered",
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "A12",
+    "event": "Daily digest (daily or weekly)",
+    "kind": "account.digest",
+    "audience": "staff",
+    "who": "the person",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A12",
+    "event": "Daily digest (daily or weekly)",
+    "kind": "account.digest",
+    "audience": "customer",
+    "who": "the person",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A13",
+    "event": "Weekly summary: my week (staff), the team's week (team leads)",
+    "kind": "account.weekly_summary",
+    "audience": "staff",
+    "who": "staff, team leads",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A14",
+    "event": "Push test",
+    "kind": "account.push_test",
+    "audience": "staff",
+    "who": "the presser",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "A14",
+    "event": "Push test",
+    "kind": "account.push_test",
+    "audience": "customer",
+    "who": "the presser",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "T1",
+    "event": "Task or step given to you",
+    "kind": "tasks.assigned",
+    "audience": "staff",
+    "who": "staff assignee",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": "offered",
+      "email": "offered",
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T2",
+    "event": "Task or step given to the customer",
+    "kind": "tasks.assigned",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T3",
+    "event": "Customer added a task",
+    "kind": "tasks.customer_created",
+    "audience": "staff",
+    "who": "profile owners, else team leads, else admin",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": true,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T4",
+    "event": "Comment",
+    "kind": "tasks.commented",
+    "audience": "staff",
+    "who": "author, assignees, watchers",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": "offered",
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T5",
+    "event": "A staff comment the customer sees",
+    "kind": "tasks.commented",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T6",
+    "event": "Mentioned",
+    "kind": "tasks.mentioned",
+    "audience": "staff",
+    "who": "mentioned staff",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": true,
+      "email": "offered",
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T7",
+    "event": "Task done",
+    "kind": "tasks.completed",
+    "audience": "staff",
+    "who": "author, assignees, watchers",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T7",
+    "event": "Task done",
+    "kind": "tasks.completed",
+    "audience": "customer",
+    "who": "the customer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T8",
+    "event": "Due soon",
+    "kind": "tasks.due_soon",
+    "audience": "staff",
+    "who": "assignees",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T8",
+    "event": "Due soon",
+    "kind": "tasks.due_soon",
+    "audience": "customer",
+    "who": "the customer",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T8",
+    "event": "Overdue",
+    "kind": "tasks.overdue",
+    "audience": "staff",
+    "who": "assignees",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T8",
+    "event": "Overdue",
+    "kind": "tasks.overdue",
+    "audience": "customer",
+    "who": "the customer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T9",
+    "event": "Nudged on a step",
+    "kind": "tasks.nudged",
+    "audience": "staff",
+    "who": "the step's assignee",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": "offered",
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T9",
+    "event": "Nudged on a step",
+    "kind": "tasks.nudged",
+    "audience": "customer",
+    "who": "the step's assignee (the customer)",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T10",
+    "event": "A step ticked done by someone else (push only when by the customer)",
+    "kind": "tasks.step_done",
+    "audience": "staff",
+    "who": "author, assignees",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T11",
+    "event": "The customer added a file or edited their task",
+    "kind": "tasks.customer_changed",
+    "audience": "staff",
+    "who": "author, assignees",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "T12",
+    "event": "A task archived under you",
+    "kind": "tasks.removed",
+    "audience": "staff",
+    "who": "assignees",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "L1",
+    "event": "Lead handed to you",
+    "kind": "leads.assigned",
+    "audience": "staff",
+    "who": "the new owner",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": "offered",
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "L2",
+    "event": "Lead taken from you",
+    "kind": "leads.taken",
+    "audience": "staff",
+    "who": "the previous owner",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "L3",
+    "event": "Moved by someone else",
+    "kind": "leads.moved",
+    "audience": "staff",
+    "who": "owner, lead watchers",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "L4",
+    "event": "Applied again (the guard overridden)",
+    "kind": "leads.applied_again",
+    "audience": "staff",
+    "who": "the job's team leads",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "L5",
+    "event": "A move the customer sees: applied, stage, rejected, reopened",
+    "kind": "leads.customer_update",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "L6",
+    "event": "Interview, offer, hired",
+    "kind": "leads.customer_milestone",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "L6",
+    "event": "Interview, offer, hired (no portal login)",
+    "kind": "leads.customer_milestone",
+    "audience": "customer_no_login",
+    "who": "customer",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "L7",
+    "event": "Interview, offer, hired (for oversight)",
+    "kind": "leads.milestone_team",
+    "audience": "staff",
+    "who": "team leads",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "L8",
+    "event": "The customer applied themselves in the portal",
+    "kind": "leads.customer_applied",
+    "audience": "staff",
+    "who": "profile owners",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": "offered",
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "L9",
+    "event": "Weekly progress: applications, replies, interviews",
+    "kind": "leads.weekly_report",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "L9",
+    "event": "Weekly progress (no portal login)",
+    "kind": "leads.weekly_report",
+    "audience": "customer_no_login",
+    "who": "customer",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "L10",
+    "event": "Follow-up due",
+    "kind": "leads.follow_up_due",
+    "audience": "staff",
+    "who": "owner",
+    "channels": {
+      "inapp": true,
+      "push": "offered",
+      "extension": true,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "L11",
+    "event": "Saved (To do) and untouched for 7 days",
+    "kind": "leads.untouched",
+    "audience": "staff",
+    "who": "owner",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "J1",
+    "event": "A job closed while leads on it are open",
+    "kind": "leads.job_closed",
+    "audience": "staff",
+    "who": "the leads' owners",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "J2",
+    "event": "Jobs merged",
+    "kind": "leads.job_merged",
+    "audience": "staff",
+    "who": "owners of the open leads",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P1",
+    "event": "Asked: the first version, and a revision that needs a new decision",
+    "kind": "approvals.requested",
+    "audience": "staff",
+    "who": "the slots' people",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": "offered",
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P1",
+    "event": "Asked: the first version, and a revision that needs a new decision",
+    "kind": "approvals.requested",
+    "audience": "customer",
+    "who": "the customer's slot",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P2",
+    "event": "Decided (email to the requester only)",
+    "kind": "approvals.decided",
+    "audience": "staff",
+    "who": "the requester; the other reviewers",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": "offered",
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P2",
+    "event": "Decided",
+    "kind": "approvals.decided",
+    "audience": "customer",
+    "who": "the customer as another reviewer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P3",
+    "event": "Comment",
+    "kind": "approvals.commented",
+    "audience": "staff",
+    "who": "requester, reviewers",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P3",
+    "event": "Comment",
+    "kind": "approvals.commented",
+    "audience": "customer",
+    "who": "the customer reviewer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P4",
+    "event": "Due within 24 h",
+    "kind": "approvals.due_soon",
+    "audience": "staff",
+    "who": "open slots",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P4",
+    "event": "Due within 24 h",
+    "kind": "approvals.due_soon",
+    "audience": "customer",
+    "who": "the customer's open slot",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P5",
+    "event": "Overdue",
+    "kind": "approvals.overdue",
+    "audience": "staff",
+    "who": "slots and requester",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P5",
+    "event": "Overdue",
+    "kind": "approvals.overdue",
+    "audience": "customer",
+    "who": "the customer's open slot",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P5",
+    "event": "Expired",
+    "kind": "approvals.expired",
+    "audience": "staff",
+    "who": "the requester",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P6",
+    "event": "Withdrawn",
+    "kind": "approvals.withdrawn",
+    "audience": "staff",
+    "who": "the open slots' people",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P6",
+    "event": "Withdrawn",
+    "kind": "approvals.withdrawn",
+    "audience": "customer",
+    "who": "the customer's open slot",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "P7",
+    "event": "Approved reply recorded as sent",
+    "kind": "approvals.sent",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M1",
+    "event": "Scheduled (passes quiet hours within 24 h)",
+    "kind": "meetings.scheduled",
+    "audience": "staff",
+    "who": "owner, staff attendees",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": "offered",
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M1",
+    "event": "Scheduled (passes quiet hours within 24 h)",
+    "kind": "meetings.scheduled",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M1",
+    "event": "Moved, cancelled (passes quiet hours within 24 h)",
+    "kind": "meetings.changed",
+    "audience": "staff",
+    "who": "owner, staff attendees",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": "offered",
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M1",
+    "event": "Moved, cancelled (passes quiet hours within 24 h)",
+    "kind": "meetings.changed",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M2",
+    "event": "Tomorrow (24 h)",
+    "kind": "meetings.day_before",
+    "audience": "staff",
+    "who": "owner, staff attendees",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": "offered",
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M2",
+    "event": "Tomorrow (24 h)",
+    "kind": "meetings.day_before",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M3",
+    "event": "In 1 hour, in 10 minutes",
+    "kind": "meetings.reminder",
+    "audience": "staff",
+    "who": "owner, staff attendees",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": true,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "M3",
+    "event": "In 1 hour, in 10 minutes",
+    "kind": "meetings.reminder",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "M4",
+    "event": "An invitation to confirm",
+    "kind": "meetings.proposed",
+    "audience": "staff",
+    "who": "owner",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": true,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M5",
+    "event": "Still unconfirmed 24 h before",
+    "kind": "meetings.unconfirmed",
+    "audience": "staff",
+    "who": "owner, team leads",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M6",
+    "event": "Ended: log the outcome (30 min after the end)",
+    "kind": "meetings.log_outcome",
+    "audience": "staff",
+    "who": "owner",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": "offered",
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M7",
+    "event": "Clash with another meeting",
+    "kind": "meetings.clash",
+    "audience": "staff",
+    "who": "owner, attendees",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M8",
+    "event": "Scheduled, for a customer with no portal login (with the .ics)",
+    "kind": "meetings.scheduled",
+    "audience": "customer_no_login",
+    "who": "customer",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M8",
+    "event": "Moved or cancelled, for a customer with no portal login (with the .ics)",
+    "kind": "meetings.changed",
+    "audience": "customer_no_login",
+    "who": "customer",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "M8",
+    "event": "Tomorrow, for a customer with no portal login (with the .ics)",
+    "kind": "meetings.day_before",
+    "audience": "customer_no_login",
+    "who": "customer",
+    "channels": {
+      "inapp": false,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "C1",
+    "event": "Reply received",
+    "kind": "conversations.reply_received",
+    "audience": "staff",
+    "who": "owner, lead watchers",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": true,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "C2",
+    "event": "Reply received (when the team lets the customer see)",
+    "kind": "conversations.reply_received",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "C3",
+    "event": "New in Triage, for mail and hand-typed messages",
+    "kind": "conversations.triage_new",
+    "audience": "staff",
+    "who": "team leads, profile owners",
+    "channels": {
+      "inapp": true,
+      "push": "offered",
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "C4",
+    "event": "Triage item unresolved for 48 h",
+    "kind": "conversations.triage_stale",
+    "audience": "staff",
+    "who": "team leads",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "C5",
+    "event": "Gmail's forwarding code",
+    "kind": "conversations.forwarding_confirm",
+    "audience": "staff",
+    "who": "profile owners",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "C5",
+    "event": "Gmail's forwarding code",
+    "kind": "conversations.forwarding_confirm",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "C6",
+    "event": "A forwarding address silent for 14 days",
+    "kind": "conversations.forwarding_silent",
+    "audience": "staff",
+    "who": "profile owners",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "C6",
+    "event": "A forwarding address silent for 14 days",
+    "kind": "conversations.forwarding_silent",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "C7",
+    "event": "A bounce marks a handle invalid; an unsubscribe marks a contact do-not-contact",
+    "kind": "conversations.contact_flagged",
+    "audience": "staff",
+    "who": "owners of the contact's leads",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "B1",
+    "event": "Watch fired (comes online passes quiet hours)",
+    "kind": "behaviour.watch_fired",
+    "audience": "staff",
+    "who": "the watcher",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": true,
+      "email": "offered",
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "B2",
+    "event": "Watch expiring tomorrow; removed by Forget",
+    "kind": "behaviour.watch_ending",
+    "audience": "staff",
+    "who": "the watcher",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "R1",
+    "event": "Archive warning",
+    "kind": "leads.archive_warned",
+    "audience": "staff",
+    "who": "owner",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "R1",
+    "event": "Archived",
+    "kind": "leads.archived",
+    "audience": "staff",
+    "who": "owner",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "R2",
+    "event": "An archived lead purged in 7 days",
+    "kind": "leads.purge_soon",
+    "audience": "staff",
+    "who": "owner, team leads",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "E1",
+    "event": "The extension connected to your account",
+    "kind": "account.extension_connected",
+    "audience": "staff",
+    "who": "the person",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "E2",
+    "event": "The extension disconnected",
+    "kind": "account.extension_off",
+    "audience": "staff",
+    "who": "the person",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": true,
+      "email": "offered",
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "E3",
+    "event": "A site's selectors failing (LinkedIn or Upwork changed)",
+    "kind": "system.selectors_failing",
+    "audience": "admin",
+    "who": "system admin",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "CP1",
+    "event": "The team updated the customer's CV, document or profile",
+    "kind": "profiles.updated_by_team",
+    "audience": "customer",
+    "who": "customer",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": false,
+      "digest": true
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "CP2",
+    "event": "The customer changed a document, channel or profile",
+    "kind": "profiles.updated_by_customer",
+    "audience": "staff",
+    "who": "profile owners",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "CP3",
+    "event": "Customer moved between teams; profile owners changed",
+    "kind": "profiles.owners_changed",
+    "audience": "staff",
+    "who": "the new owners, team leads",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": false,
+      "digest": false
+    },
+    "quiet": "hold"
+  },
+  {
+    "id": "S1",
+    "event": "Deliveries failing over a threshold",
+    "kind": "system.delivery_failing",
+    "audience": "admin",
+    "who": "system admin",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "S2",
+    "event": "Inbound mail webhook failing",
+    "kind": "system.inbound_failing",
+    "audience": "admin",
+    "who": "system admin",
+    "channels": {
+      "inapp": true,
+      "push": true,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  },
+  {
+    "id": "S3",
+    "event": "Background jobs discarding work",
+    "kind": "system.jobs_discarded",
+    "audience": "admin",
+    "who": "system admin",
+    "channels": {
+      "inapp": true,
+      "push": false,
+      "extension": false,
+      "email": true,
+      "digest": false
+    },
+    "quiet": "pass"
+  }
+]

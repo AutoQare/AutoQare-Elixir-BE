@@ -67,8 +67,17 @@ config :core, Oban,
        {"25 * * * *", Core.Extension.MissSweep},
        {"30 * * * *", Core.Workers.ApprovalExpirySweep},
        {"35 * * * *", Core.Workers.InboundSweep},
+       # AQ-10 §11.4: daily, as the pinned contract says.
+       {"40 3 * * *", Core.Workers.ObservationSweep},
+       # AQ-12 §11.4: alert jobs nobody saved, archived after 14 days, daily.
+       {"50 3 * * *", Core.Workers.AlertSweep},
        {"*/5 * * * *", Notifire.Workers.DeliveryWorker},
-       {"*/5 * * * *", Core.Workers.DigestScan}
+       {"*/5 * * * *", Core.Workers.DigestScan},
+       # AQ-10B §11.4: the weekly summary and report, the hourly scans and
+       # the meetings' (unconfirmed, outcome to log).
+       {"*/10 * * * *", Core.Workers.WeeklyScan},
+       {"45 * * * *", Core.Workers.NotificationScan},
+       {"*/10 * * * *", Core.Workers.MeetingNoticeScan}
      ]}
   ]
 
@@ -99,11 +108,16 @@ config :guardian, Guardian.DB,
 config :core, :mail_workers,
   invitation: Notifire.Workers.InvitationWorker,
   password_reset: Notifire.Workers.PasswordResetWorker,
-  email_change: Notifire.Workers.EmailChangeWorker
+  email_change: Notifire.Workers.EmailChangeWorker,
+  # AQ-10B §5.1: an unanswered invitation's reminders (A2), and the old
+  # address told when a change is asked (A8) and when it is done (A9).
+  invitation_reminder: Notifire.Workers.InvitationWorker,
+  email_change_notice: Notifire.Workers.EmailChangeWorker,
+  email_changed: Notifire.Workers.EmailChangeWorker
 
 # **The delivery seam** (AQ-08 §7.1): when a new notification's push or
 # email is due now, `core` enqueues this worker by name, unique for two
-# seconds, as mCart's `deliver_soon` does. Named here, never in `core`'s code.
+# seconds, as tCart's `deliver_soon` does. Named here, never in `core`'s code.
 config :core, :delivery_worker, Notifire.Workers.DeliveryWorker
 
 # Web Push (AQ-08 §7.6): sent for real unless a config says otherwise (test
@@ -120,6 +134,14 @@ config :core, :app_urls, app_urls
 config :notifire, :app_urls, app_urls
 config :notifire, from_name: "AutoQare", from_email: "hello@autoqare.com"
 
+# AQ-10B §7.1, §11.4: notification mail comes from `notifications@` as
+# "<Organisation> via AutoQare"; account mail from `hello@`. The backend's
+# own origin is what `List-Unsubscribe` posts to (`POST /unsubscribe`).
+config :notifire,
+  notifications_email: "notifications@autoqare.com",
+  unsubscribe_mailto: "unsubscribe@autoqare.com",
+  api_url: "http://localhost:4100"
+
 # *Continue with Google* (QP1-5). No client id until the owner creates one;
 # until then a dev build uses the stand-in (dev.exs: `id_token = "dev:<email>"`).
 # runtime.exs reads GOOGLE_CLIENT_ID and turns the stand-in off in prod.
@@ -134,7 +156,18 @@ config :core, :google,
 config :core, :storage,
   adapter: Core.Storage.Local,
   root: Path.expand("../priv/uploads", __DIR__),
-  max_bytes: [photo: 5_000_000, document: 10_000_000, attachment: 10_000_000, eml: 5_000_000]
+  max_bytes: [
+    photo: 5_000_000,
+    document: 10_000_000,
+    attachment: 10_000_000,
+    eml: 5_000_000,
+    import: 10_000_000
+  ]
+
+# Imports (AQ-12 §11.4, QP12-15): at most 20,000 rows and 10 MB a file
+# (413 `import_too_large`); the undo lasts seven days after the import
+# (QP12-14). test.exs lowers the caps so the too-large test stays small.
+config :core, :imports, max_rows: 20_000, max_bytes: 10_000_000, undo_days: 7
 
 # Forwarded mail (AQ-09 §6, §11.4). Each email channel's address is built
 # from its token: `{token}` in `address` is replaced. The webhook

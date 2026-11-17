@@ -90,8 +90,10 @@ defmodule Core.Leads.PipelinesTest do
     assert %{key: "reference_check", kind: :custom, anchor_kind: :final, position: 9} =
              Enum.at(saved.stages, 8)
 
-    assert [%{action: "pipeline_saved"}] =
-             Data.Audit.list(c.org.id, %{subject_kind: "pipeline_versions"}, 10) |> Enum.take(1)
+    where = %{"subject_kind" => %{"$EQUAL" => "pipeline_versions"}}
+
+    assert {:ok, [%{action: "pipeline_saved"} | _]} =
+             Data.Audit.list(c.org.id, %{}, where, %{}, 10)
 
     {:ok, older} = Leads.get(scope_for(c.fiza), before.id, @now)
     assert older.pipeline.version == 1

@@ -11,7 +11,7 @@ defmodule Data.Repo.Migrations.CreateContactHandles do
   *exact* answer, and the 409 `contact_exists`. `is_invalid` is a bounce.
   """
 
-  @kinds ~w(email linkedin upwork phone other)
+  @kinds ~w(email linkedin upwork phone indeed fiverr other)
 
   def change do
     create table(:contact_handles, primary_key: false) do

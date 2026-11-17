@@ -1,7 +1,8 @@
 defmodule ApiClient.ApprovalController do
   @moduledoc """
   Approvals in the portal (AQ-07 §11.2, §11.4): what waits on the customer
-  (`GET /approvals?tab=waiting|all`), the nav's count, a lead's approvals
+  (`GET /approvals?tab=waiting|all&$where`, `Data.Filters.Approvals`), the
+  nav's count, a lead's approvals
   (its Approvals tab, a bare list), the sheet, *Approve* · *Request
   changes* · *Reject* (200), and the comments (201 to add, 204 to
   delete). The scope is pinned to the customer; `Core.Approvals` cuts

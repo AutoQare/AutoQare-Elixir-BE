@@ -20,8 +20,10 @@ defmodule Data.Notifications.Deliveries do
 
   @doc """
   Writes a new notification's planned rows (`[%{channel, deliver_after,
-  deferred}]`); `ics` rides on the email row only. **A row already there
-  for the pair is left alone**: never twice. Answers the rows written.
+  deferred, skip_reason?}]`; a row with a `skip_reason` is written
+  `skipped`, P10b's folded push); `ics` rides on the email row only. **A
+  row already there for the pair is left alone**: never twice. Answers
+  the rows written.
   """
   @spec insert_planned(Notification.t(), [map()], String.t() | nil, DateTime.t()) ::
           [Delivery.t()]
@@ -36,7 +38,8 @@ defmodule Data.Notifications.Deliveries do
           notification_id: n.id,
           user_id: n.user_id,
           channel: p.channel,
-          state: :pending,
+          state: if(p[:skip_reason], do: :skipped, else: :pending),
+          skip_reason: p[:skip_reason],
           deliver_after: usec(p.deliver_after),
           deferred: p.deferred,
           attempts: 0,
@@ -71,7 +74,7 @@ defmodule Data.Notifications.Deliveries do
     |> Repo.all()
   end
 
-  @doc "A person's rows still held by quiet hours, with their notification and kind."
+  @doc "A person's rows still held by quiet hours or snooze, with their notification and kind."
   @spec held(binary()) :: [Delivery.t()]
   def held(user_id) do
     from(d in Delivery,
@@ -79,6 +82,56 @@ defmodule Data.Notifications.Deliveries do
       preload: [notification: [notification_kind: :notification_group]]
     )
     |> Repo.all()
+  end
+
+  @doc "A person's `pending` rows of every channel, with their notification and kind."
+  @spec pending(binary()) :: [Delivery.t()]
+  def pending(user_id) do
+    from(d in Delivery,
+      where: d.user_id == ^user_id and d.state == :pending,
+      preload: [notification: [notification_kind: :notification_group]]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  Whether the person has a push about this lead or task written since
+  `since` that wasn't itself folded (QP10b-17): a new one folds into it.
+  """
+  @spec recent_push?(binary(), binary() | nil, binary() | nil, DateTime.t()) :: boolean()
+  def recent_push?(_user_id, nil, nil, _since), do: false
+
+  def recent_push?(user_id, lead_id, task_id, %DateTime{} = since) do
+    since = usec(since)
+
+    subject =
+      case {lead_id, task_id} do
+        {nil, task} -> dynamic([d, n], n.task_id == ^task)
+        {lead, _} -> dynamic([d, n], n.lead_id == ^lead)
+      end
+
+    from(d in Delivery,
+      join: n in assoc(d, :notification),
+      where:
+        d.user_id == ^user_id and d.channel == :push and d.inserted_at >= ^since and
+          (is_nil(d.skip_reason) or d.skip_reason != :folded),
+      where: ^subject
+    )
+    |> Repo.exists?()
+  end
+
+  @doc """
+  Failed deliveries (a row `failed`, or still `pending` with an error)
+  updated since `since`, across every organisation: the system checks'.
+  """
+  @spec failing_since_for_system(DateTime.t()) :: non_neg_integer()
+  def failing_since_for_system(%DateTime{} = since) do
+    since = usec(since)
+
+    from(d in Delivery,
+      where: d.updated_at >= ^since and (d.state == :failed or not is_nil(d.error))
+    )
+    |> Repo.aggregate(:count)
   end
 
   @doc "Moves a held row to its new time; `deferred` says whether quiet hours still hold it."
@@ -175,14 +228,15 @@ defmodule Data.Notifications.Deliveries do
   Claims the person's due `pending` extension rows **in one statement**
   (`UPDATE … RETURNING`, the rows `sent`), oldest first, at most `limit`;
   a second poll, or a second device, gets none of them. Rows in a group
-  whose extension switch is off (`off_groups`) are skipped
-  (`preference_off`) first. Answers the claimed rows' notifications, oldest
+  whose extension switch is off (`off_groups`), or of a kind whose switch
+  is (`off_kinds`, P10b), are skipped (`preference_off`) first. Answers the claimed rows' notifications, oldest
   first.
   """
-  @spec claim_extension(binary(), DateTime.t(), pos_integer(), [String.t()]) :: [Notification.t()]
-  def claim_extension(user_id, %DateTime{} = now, limit, off_groups \\ []) do
+  @spec claim_extension(binary(), DateTime.t(), pos_integer(), [String.t()], [String.t()]) ::
+          [Notification.t()]
+  def claim_extension(user_id, %DateTime{} = now, limit, off_groups \\ [], off_kinds \\ []) do
     now = usec(now)
-    _skipped = skip_off(user_id, now, off_groups)
+    _skipped = skip_off(user_id, now, off_groups, off_kinds)
 
     due =
       from(d in Delivery,
@@ -203,10 +257,14 @@ defmodule Data.Notifications.Deliveries do
     |> Repo.all()
   end
 
-  defp skip_off(_user_id, _now, []), do: 0
+  defp skip_off(_user_id, _now, [], []), do: 0
 
-  defp skip_off(user_id, now, off_groups) do
-    kinds = from(k in Kind, where: k.notification_group_key in ^off_groups, select: k.key)
+  defp skip_off(user_id, now, off_groups, off_kinds) do
+    kinds =
+      from(k in Kind,
+        where: k.notification_group_key in ^off_groups or k.key in ^off_kinds,
+        select: k.key
+      )
 
     notifications =
       from(n in Notification,

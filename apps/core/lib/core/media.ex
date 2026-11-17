@@ -1,6 +1,6 @@
 defmodule Core.Media do
   @moduledoc """
-  The three-step upload (AQ-01 §4.1, mCart's): **reserve** a row
+  The three-step upload (AQ-01 §4.1, tCart's): **reserve** a row
   (`POST /media`), **store** the bytes (`PUT /media/:id/blob`, sniffed against
   the allowlist and the declared type, capped per kind), **confirm**
   (`POST /media/:id/confirm`, marks `uploaded_at`). A file is read with a
@@ -8,8 +8,11 @@ defmodule Core.Media do
 
   Allowlist (QP1-3): JPEG, PNG, WebP for a photo; PDF, DOCX, text, markdown
   for a document; any of them for an attachment; AQ-06 §11.6 an email
-  (`message/rfc822`) for an `eml`, read by `POST /eml`. 5 MB for a photo
-  or an email, 10 MB otherwise. Unconfirmed rows older than a day are
+  (`message/rfc822`) for an `eml`, read by `POST /eml`; AQ-12 §11.4 a
+  `.csv` or an `.xlsx` for an `import`, read by `POST /imports` (a CSV
+  may be declared `text/csv`, `text/plain` or, as some browsers send it,
+  `application/vnd.ms-excel`). 5 MB for a photo or an email, 10 MB
+  otherwise. Unconfirmed rows older than a day are
   swept (`sweep_unconfirmed/1`). An email's attachments are stored with
   `store_attachment/4`, sniffed against the same allowlist.
   """
@@ -28,12 +31,19 @@ defmodule Core.Media do
                      application/vnd.openxmlformats-officedocument.wordprocessingml.document
                      text/plain text/markdown)
 
+  @import_types ~w(text/csv text/plain application/vnd.ms-excel
+                   application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+  @sheet_types ~w(text/csv application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+
   @doc "The content types each kind may declare."
   @spec allowed_types(atom()) :: [String.t()]
   def allowed_types(:photo), do: @photo_types
   def allowed_types(:document), do: @document_types
-  def allowed_types(:attachment), do: @photo_types ++ @document_types
+  # AQ-12: the console uploads an import's sheet as an attachment (`text/csv`
+  # or an `.xlsx`), within the same 10 MB.
+  def allowed_types(:attachment), do: @photo_types ++ @document_types ++ @sheet_types
   def allowed_types(:eml), do: ["message/rfc822"]
+  def allowed_types(:import), do: @import_types
 
   @doc "Step 1: reserves the row and says where to send the bytes. `path` is the caller's `/media` route."
   @spec create(Scope.t(), map(), String.t()) ::
@@ -218,7 +228,7 @@ defmodule Core.Media do
 
   # ── Checks ──────────────────────────────────────────────────────────────────
 
-  defp kind(kind) when kind in ~w(photo document attachment eml),
+  defp kind(kind) when kind in ~w(photo document attachment eml import),
     do: {:ok, String.to_existing_atom(kind)}
 
   defp kind(_other), do: {:error, {:missing, :media_kind}}

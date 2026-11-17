@@ -1,6 +1,6 @@
 defmodule Core.Tasks.Comments do
   @moduledoc """
-  A task's thread (AQ-02 §7.2, §7.3; mCart's): comments and one level of
+  A task's thread (AQ-02 §7.2, §7.3; tCart's): comments and one level of
   replies, each **for the team only** or seen by the customer. Staff choose
   (`is_staff_only`; Team only when they do not say, QP2-5); the customer
   never writes one, never reads one, and is never told of one. A reply to

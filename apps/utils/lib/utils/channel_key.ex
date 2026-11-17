@@ -15,10 +15,14 @@ defmodule Utils.ChannelKey do
   | `https://www.linkedin.com/in/tanweer/`, `linkedin.com/in/Tanweer?trk=x`, `/in/tanweer/overlay/…` | `linkedin:tanweer` |
   | `https://www.upwork.com/freelancers/~01aa00bb11cc22dd33`, `…/freelancers/~01AA00BB11CC22DD33?viewMode=1` | `upwork:~01aa00bb11cc22dd33` |
   | an email, a site the rules don't know | `nil` |
+  | an Indeed account's email, on an `indeed` channel (AQ-12 §11.4) | `indeed:{email}`, lowercased |
 
   A LinkedIn slug is percent-decoded and lowercased; an Upwork id keeps its
   `~` and is lowercased. `key/2` also asks that the link is the kind's own
-  platform: a LinkedIn link on an Upwork channel has no key.
+  platform: a LinkedIn link on an Upwork channel has no key. **Indeed has
+  no profile link**: its page shows the signed-in account's email, so an
+  Indeed channel's key is that email (`key(:indeed, email)`, a `mailto:`
+  dropped), and `key/1` still answers `nil` for a bare email.
   `Utils.ChannelKeyTest` holds every form.
   """
 
@@ -55,10 +59,17 @@ defmodule Utils.ChannelKey do
       nil
       iex> Utils.ChannelKey.key(:email, "tanweer@example.com")
       nil
+      iex> Utils.ChannelKey.key(:indeed, " Tanweer.Indeed@Example.com ")
+      "indeed:tanweer.indeed@example.com"
   """
   @spec key(atom() | String.t() | nil, term()) :: String.t() | nil
   def key(kind, handle) when is_atom(kind) and not is_nil(kind),
     do: key(Atom.to_string(kind), handle)
+
+  def key("indeed", handle) when is_binary(handle) do
+    email = handle |> String.trim() |> String.replace(~r/^mailto:/i, "") |> String.downcase()
+    if email =~ ~r/^[^\s@:\/]+@[^\s@:\/]+\.[^\s@:\/]+$/, do: "indeed:" <> email, else: nil
+  end
 
   def key(kind, handle) when kind in ["linkedin", "upwork"] do
     case key(handle) do
@@ -70,10 +81,12 @@ defmodule Utils.ChannelKey do
   def key(_kind, _handle), do: nil
 
   @doc """
-  The platform a key names (`"linkedin"`, `"upwork"`), or `nil`.
+  The platform a key names (`"linkedin"`, `"upwork"`, `"indeed"`), or `nil`.
 
       iex> Utils.ChannelKey.platform("upwork:~01aa")
       "upwork"
+      iex> Utils.ChannelKey.platform("indeed:tanweer@example.com")
+      "indeed"
   """
   @spec platform(String.t() | nil) :: String.t() | nil
   def platform(key) when is_binary(key) do

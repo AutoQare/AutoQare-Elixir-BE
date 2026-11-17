@@ -8,7 +8,7 @@ defmodule Core.Tasks.Files do
 
   alias Core.Media
   alias Core.Tasks
-  alias Core.Tasks.{Histories, Write}
+  alias Core.Tasks.{Histories, Notices, Write}
   alias Data.Scope
   alias Data.TaskParts
 
@@ -20,10 +20,24 @@ defmodule Core.Tasks.Files do
     with {:ok, task} <- Tasks.fetch(scope, :files, id),
          {:ok, media} <- Media.own_uploaded(scope, media_id || "", :attachment) do
       change(scope, task, now, fn ->
-        added(TaskParts.add_media(task.id, media.id, Scope.user_id(scope)), media)
+        task.id
+        |> TaskParts.add_media(media.id, Scope.user_id(scope))
+        |> added(media)
+        |> file_told(scope, task, media)
       end)
     end
   end
+
+  # AQ-10B §5.2 T11: the customer added a file.
+  defp file_told({:ok, lines}, scope, task, media) do
+    if Scope.customer?(scope),
+      do:
+        {:ok, lines,
+         Notices.customer_changed(scope, task, {:file, name(media)}, "file:#{media.id}")},
+      else: {:ok, lines}
+  end
+
+  defp file_told(error, _scope, _task, _media), do: error
 
   @doc "`DELETE /tasks/:id/files/:media_id`: off the task; the bytes stay with their row."
   @spec remove(Scope.t(), term(), term(), DateTime.t()) :: {:ok, map() | :gone} | {:error, term()}
@@ -49,7 +63,10 @@ defmodule Core.Tasks.Files do
   defp change(scope, task, now, fun) do
     result =
       Write.change(scope, task, now, fn _group ->
-        with({:ok, lines} <- fun.(), do: {:ok, lines, []})
+        case fun.() do
+          {:ok, lines} -> {:ok, lines, []}
+          other -> other
+        end
       end)
 
     Tasks.answer(scope, result, now)

@@ -172,6 +172,12 @@ defmodule Core.Conversations.Classify do
     with {:ok, contact} <- sender(message),
          {:ok, updated} <- ContactStore.update(contact, %{is_do_not_contact: true}) do
       :ok = Core.Contacts.audit_change(scope, contact, updated, now)
+      # AQ-10B §5.6 C7.
+      :ok =
+        Core.Notifications.send_events(
+          Notices.contact_flagged(scope, updated, :unsubscribe, message)
+        )
+
       sheet(scope, lead, now)
     end
   end
@@ -183,6 +189,17 @@ defmodule Core.Conversations.Classify do
 
       handles ->
         Enum.each(handles, fn h -> {:ok, _invalid} = ContactStore.invalidate_handle(h) end)
+
+        # AQ-10B §5.6 C7: the owners of each contact's leads.
+        :ok =
+          handles
+          |> Enum.map(fn h ->
+            contact = ContactStore.get(message.organisation_id, h.contact_id)
+            contact && Notices.contact_flagged(scope, contact, {:bounce, h.value}, message)
+          end)
+          |> Enum.reject(&is_nil/1)
+          |> Core.Notifications.send_events()
+
         sheet(scope, lead, now)
     end
   end

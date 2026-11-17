@@ -1,0 +1,12 @@
+Hi <%= @first_name || "there" %>,
+
+<%= @title %>
+<%= if @body do %>
+
+<%= @body %>
+<% end %>
+
+<%= facts_text(@facts) %>
+<%= if @url do %>Open delivery health: <%= @url %><% end %>
+
+Some background work gave up after its retries. The server log has the details.

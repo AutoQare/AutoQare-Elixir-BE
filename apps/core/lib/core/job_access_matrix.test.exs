@@ -274,7 +274,7 @@ defmodule Core.JobAccessMatrixTest do
 
   test "the company card lists the open jobs of the caller's teams they may see", c do
     titles = fn scope ->
-      {:ok, card} = Companies.get(scope, c.company.id)
+      {:ok, card} = Companies.get(scope, c.company.id, DateTime.utc_now())
       card.open_jobs |> Enum.map(& &1.title) |> Enum.sort()
     end
 
@@ -303,7 +303,9 @@ defmodule Core.JobAccessMatrixTest do
     for who <- [:dawud, :hira, :fiza, :admin, :tanweer] do
       scope = scope_of(c, who)
       assert Jobs.get(scope, c.foreign_job.id, @now) == {:error, :not_found}
-      assert Companies.get(scope, c.foreign_company.id) == {:error, :not_found}
+
+      assert Companies.get(scope, c.foreign_company.id, DateTime.utc_now()) ==
+               {:error, :not_found}
     end
   end
 
@@ -315,7 +317,7 @@ defmodule Core.JobAccessMatrixTest do
     assert Check.run(tanweer, Map.put(backend, "url", "https://acme.io/jobs/1"), @now) ==
              {:error, :not_found}
 
-    assert Companies.search(tanweer, nil) == {:error, :not_found}
+    assert Companies.search(tanweer, %{}) == {:error, :not_found}
 
     assert Jobs.create(tanweer, Map.merge(backend, %{"url" => "https://acme.io/jobs/1"}), @now) ==
              {:error, :not_found}

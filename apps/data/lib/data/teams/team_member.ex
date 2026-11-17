@@ -1,7 +1,9 @@
 defmodule Data.Teams.TeamMember do
   @moduledoc """
   Who is in a team, as what (AQ-01 §4.2). The roles are `Data.Vocabulary`'s
-  `team_member_roles`, shared with the frontend word for word.
+  `team_member_roles`, shared with the frontend word for word. AQ-11 §7.4:
+  `daily_target`, the member's own target in this team (null: their
+  profiles' sum); `target_today` is filled on read, never stored.
   """
 
   use Data.Schema
@@ -17,6 +19,8 @@ defmodule Data.Teams.TeamMember do
     field(:role, Ecto.Enum, values: @roles)
     field(:joined_at, :utc_datetime_usec)
     field(:left_at, :utc_datetime_usec)
+    field(:daily_target, :integer)
+    field(:target_today, :integer, virtual: true)
 
     belongs_to(:team, Team)
     belongs_to(:user, User)
@@ -40,5 +44,13 @@ defmodule Data.Teams.TeamMember do
     )
     |> foreign_key_constraint(:team_id)
     |> foreign_key_constraint(:user_id)
+  end
+
+  @doc "The member's own daily target (AQ-11 §5): a whole number from 0, or nil for the profiles' sum."
+  def target_changeset(member, attrs) do
+    member
+    |> cast(attrs, [:daily_target])
+    |> validate_number(:daily_target, greater_than_or_equal_to: 0, less_than: 1000)
+    |> check_constraint(:daily_target, name: :daily_target_not_negative)
   end
 end

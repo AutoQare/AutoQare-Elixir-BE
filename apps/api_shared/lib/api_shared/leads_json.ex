@@ -124,6 +124,7 @@ defmodule ApiShared.LeadsJSON do
     s
     |> card()
     |> Map.merge(Map.take(s, @sheet_facts))
+    |> Map.merge(Map.take(s, [:watching, :watchers_count, :muted]))
     |> Map.update!(:applied_by, &person/1)
     |> Map.update!(:created_by, &person/1)
     |> Map.update!(:pipeline, &pipeline/1)
@@ -261,15 +262,17 @@ defmodule ApiShared.LeadsJSON do
   def saved_view(v), do: Map.take(v, [:id, :screen, :name, :query, :columns, :position])
 
   @doc """
-  `GET /tracker`: `{items: [tracker row], next_cursor, total, groups}` —
-  `groups` (`[{key, name, count}]` over every matching row) only when
-  grouped, else null.
+  `GET /tracker`: `{items: [tracker row], next_cursor, total,
+  applications, groups}` — `applications` the `applied` rows behind an
+  *Applied* filter (AQ-11B §11.5; null without one), `groups` (`[{key,
+  name, count}]` over every matching row) only when grouped, else null.
   """
   def tracker(page) do
     %{
       items: Enum.map(page.items, &tracker_row/1),
       next_cursor: page.next_cursor,
       total: page.total,
+      applications: page.applications,
       groups: page.groups
     }
   end

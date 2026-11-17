@@ -1,0 +1,7 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Review your account", @url) %>
+<%= link(@url) %>
+<%= paragraph("Until the new address is confirmed, this one still signs you in. If this wasn’t you, change your password now.") %>

@@ -80,6 +80,15 @@ defmodule Core.MediaTest do
       assert {:ok, _m, _t} =
                declare(scope, %{"media_kind" => "attachment", "content_type" => "application/pdf"})
 
+      # AQ-12 §11.4: an import's CSV (as browsers declare it) or spreadsheet.
+      for type <- ~w(text/csv application/vnd.ms-excel
+                     application/vnd.openxmlformats-officedocument.spreadsheetml.sheet) do
+        assert {:ok, _m, _t} = declare(scope, %{"media_kind" => "import", "content_type" => type})
+      end
+
+      assert declare(scope, %{"media_kind" => "import", "content_type" => "application/pdf"}) ==
+               {:error, :file_type_not_allowed}
+
       assert declare(scope, %{"media_kind" => "video"}) == {:error, {:missing, :media_kind}}
       assert declare(scope, %{"content_type" => nil}) == {:error, {:missing, :content_type}}
     end

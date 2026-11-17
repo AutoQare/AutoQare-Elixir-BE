@@ -12,7 +12,10 @@ defmodule Core.Ingest.Extension.Pool do
   - a snapshot of kind `fields` when the fields differ, a signals row when
     a fact differs (`Core.Jobs.Capture`);
   - `last_seen_at` and the job's `last_activity_at` move, and the fill is
-    audited as P3's edit is.
+    audited as P3's edit is;
+  - AQ-10 §6.1: a first read as reposted writes `job_reposted`, a moved
+    *last viewed* `last_active_reported`, and the Upwork client's local
+    time sets the company's zone (`Core.Jobs.Capture`).
 
   **At `peer_jobs: view` only *last seen* and the signals move.** A job the
   caller may not see (a teammate's at `hidden`) is never touched. Also the
@@ -21,6 +24,7 @@ defmodule Core.Ingest.Extension.Pool do
   """
 
   alias Core.Access
+  alias Core.Behaviour.Sources
   alias Core.Companies
   alias Core.Ingest.Extension.Normalize
   alias Core.Jobs
@@ -29,15 +33,16 @@ defmodule Core.Ingest.Extension.Pool do
   alias Core.Jobs.Sheet, as: JobSheet
   alias Core.Leads
   alias Core.Tasks
+  alias Core.Tasks.Write
   alias Data.JobParts
   alias Data.Jobs, as: JobStore
   alias Data.Jobs.Job
-  alias Data.Repo
   alias Data.Scope
   alias Data.Skills
   alias Utils.JobKey
 
   @money ~w(comp_min_minor comp_max_minor comp_currency comp_period comp_source comp_text)a
+  @sites Data.Vocabulary.ext_sites() |> Enum.map(&String.to_atom/1)
 
   @doc """
   `POST /ext/v1/jobs/capture {team_id, url, fields}`: refreshes a job
@@ -101,16 +106,18 @@ defmodule Core.Ingest.Extension.Pool do
   def refresh(%Scope{} = scope, %Job{} = job, norm, %DateTime{} = now) do
     edit? = Access.can?(scope, :edit, {:job, job})
 
-    Repo.transaction(fn ->
+    Write.commit(fn ->
       before = if edit?, do: Jobs.audited(job)
       filled = if edit?, do: fill(scope, job, norm, now), else: []
       if edit?, do: refresh_details(job, norm.details)
 
-      {:ok, _kept} = Capture.write(scope, job, kept(norm), now, snapshot: edit?)
+      fresh = JobStore.reload(job)
+      {:ok, _kept} = Capture.write(scope, fresh, kept(norm), now, snapshot: edit?)
+      :ok = Sources.job_seen(scope, fresh, norm.job, now)
 
       :ok = JobStore.seen(job, now, activity: edit?)
       if edit?, do: Jobs.record_changes(scope, job, before, Jobs.audited(job), now)
-      {JobStore.reload(job), filled}
+      {:ok, {JobStore.reload(job), filled}}
     end)
   end
 
@@ -192,19 +199,39 @@ defmodule Core.Ingest.Extension.Pool do
 
   @doc "What `Core.Jobs.insert_new/5` and `Core.Jobs.Capture` keep of a capture."
   @spec kept(map()) :: map()
-  def kept(norm),
-    do: %{snapshot: norm.snapshot, signal: norm.signal, description_html: norm.description_html}
+  def kept(norm) do
+    %{
+      snapshot: norm.snapshot,
+      signal: norm.signal,
+      description_html: norm.description_html,
+      time_zone: norm[:time_zone]
+    }
+  end
 
   @doc "The fields, normalised for the organisation: its zone, its skills, the link's site."
   @spec normalize(Scope.t(), map(), atom(), DateTime.t()) :: map()
   def normalize(%Scope{} = scope, fields, source, %DateTime{} = now) do
     Normalize.run(fields, %{
-      site: if(source == :upwork, do: :upwork, else: :linkedin),
+      site: site(source),
       now: now,
       zone: Tasks.zone(scope),
       skills: Enum.map(Skills.list(Scope.organisation_id(scope)), &%{id: &1.id, name: &1.name})
     })
   end
+
+  @doc """
+  The site a job's source is read as (AQ-12 §11.4): one of the extension's
+  sites, never "everything else is LinkedIn"; any other source (a company's
+  own page, an ATS) is `:other`, read by the shared fields alone.
+
+      iex> Core.Ingest.Extension.Pool.site(:wellfound)
+      :wellfound
+      iex> Core.Ingest.Extension.Pool.site(:greenhouse)
+      :other
+  """
+  @spec site(atom()) :: atom()
+  def site(source) when source in @sites, do: source
+  def site(_source), do: :other
 
   @doc "The body's `fields`: an object, required."
   @spec fields(map()) :: {:ok, map()} | {:error, term()}

@@ -1,0 +1,12 @@
+Hi <%= @first_name || "there" %>,
+
+<%= @title %>
+<%= if @body do %>
+
+<%= @body %>
+<% end %>
+
+<%= facts_text(@facts) %>
+<%= if @url do %>Open AutoQare: <%= @url %><% end %>
+
+Gmail needs this code once to start forwarding your mail to your team.

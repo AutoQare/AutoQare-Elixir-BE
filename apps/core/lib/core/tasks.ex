@@ -75,17 +75,24 @@ defmodule Core.Tasks do
     with {:ok, task} <- fetch(scope, :read, id), do: {:ok, Histories.list(scope, task)}
   end
 
-  @doc "`GET /tasks/search?q`: the relation picker — live tasks the caller sees, `[{id, title, state}]`."
-  @spec search(Scope.t(), String.t() | nil) :: {:ok, [map()]} | {:error, term()}
-  def search(%Scope{} = scope, q) do
-    if Scope.staff?(scope),
-      do:
-        {:ok,
-         scope
-         |> Visibility.filter()
-         |> Store.search(q)
-         |> Enum.map(&%{id: &1.id, title: &1.title, state: &1.state})},
-      else: {:error, :not_found}
+  @doc """
+  `GET /tasks/search?$where`: the relation picker — up to 20 tasks the
+  caller sees, `[{id, title, state}]`; `$where` is the board's
+  (`Data.Filters.Tasks`: `q {$ILIKE}` above all; only the live unless it
+  asks for `archived`).
+  """
+  @spec search(Scope.t(), map(), DateTime.t()) :: {:ok, [map()]} | {:error, term()}
+  def search(%Scope{} = scope, params, %DateTime{} = now) do
+    params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
+
+    with true <- Scope.staff?(scope) || {:error, :not_found},
+         {:ok, tasks} <-
+           Store.search(
+             Visibility.filter(scope),
+             params["$where"],
+             Data.Filters.context(scope, now: now)
+           ),
+         do: {:ok, Enum.map(tasks, &%{id: &1.id, title: &1.title, state: &1.state})}
   end
 
   # ── Create ──────────────────────────────────────────────────────────────────

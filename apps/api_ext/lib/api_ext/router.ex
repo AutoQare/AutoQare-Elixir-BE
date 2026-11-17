@@ -76,6 +76,12 @@ defmodule ApiExt.Router do
 
       # AQ-08 §7.5: the minute poll claims the person's pop-ups.
       get "/notifications/pop-ups", NotificationController, :pop_ups
+
+      # AQ-10 §11.4: the panel's behaviour line, presence and *Watch*.
+      get "/behaviour", BehaviourController, :show
+      post "/observations", BehaviourController, :observe
+      post "/watches", BehaviourController, :watch
+      delete "/watches/:id", BehaviourController, :unwatch
     end
   end
 

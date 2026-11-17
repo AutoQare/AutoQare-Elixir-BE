@@ -169,12 +169,22 @@ defmodule ApiClient.ApprovalControllerTest do
              body(as_customer(c.tanweer, :get, "/v1/leads/#{c.lead.id}/approvals"))
 
     assert [%{"id" => ^id}] =
-             body(as_customer(c.tanweer, :get, "/v1/approvals?tab=all&lead_id=#{c.lead.id}"))[
+             body(
+               as_customer(
+                 c.tanweer,
+                 :get,
+                 "/v1/approvals?tab=all&$where[lead_id][$EQUAL]=#{c.lead.id}"
+               )
+             )[
                "items"
              ]
 
     assert body(
-             as_customer(c.tanweer, :get, "/v1/approvals?tab=all&lead_id=#{Ecto.UUID.generate()}")
+             as_customer(
+               c.tanweer,
+               :get,
+               "/v1/approvals?tab=all&$where[lead_id][$EQUAL]=#{Ecto.UUID.generate()}"
+             )
            )["items"] == []
 
     assert body(as_customer(c.tanweer, :get, "/v1/approvals/count")) == %{"waiting_on_me" => 0}

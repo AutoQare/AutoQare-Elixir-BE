@@ -18,8 +18,10 @@ defmodule Core.Jobs do
 
   alias Core.Access
   alias Core.Audit
+  alias Core.Behaviour.Sources
   alias Core.Companies
-  alias Core.Jobs.{Capture, Check, Sheet}
+  alias Core.Jobs.{Capture, Check, Link, Sheet}
+  alias Core.Tasks.Write
   alias Data.JobParts
   alias Data.Jobs, as: Store
   alias Data.Jobs.{Job, UpworkDetails}
@@ -27,7 +29,6 @@ defmodule Core.Jobs do
   alias Data.Scope
   alias Data.Skills
   alias Data.Teams
-  alias Utils.JobKey
 
   @created ~w(team_id title source canonical_key company_id status)a
   @seniority_of %{entry: :entry, intermediate: :associate, expert: :mid_senior}
@@ -96,6 +97,10 @@ defmodule Core.Jobs do
   again inside the transaction: a link already in the team's pool — or merged into a job — is
   `{:error, {:job_exists, job}}`, and so is one that lands between the
   check and the insert (the unique key catches it). Answers the sheet.
+
+  AQ-12 §11.4: with `source: fiverr` the body takes `origin_kind` (`brief ·
+  inquiry · order`, required) and no `url` (a brief's link is kept when
+  sent); the job is keyed by its own id, `fiverr:job:{id}`.
   """
   @spec create(Scope.t(), map(), DateTime.t()) :: {:ok, map()} | {:error, term()}
   def create(%Scope{} = scope, params, %DateTime{} = now) do
@@ -103,10 +108,34 @@ defmodule Core.Jobs do
 
     with :ok <- Access.why_not(scope, :create, {:job, %{}}),
          {:ok, team} <- team(scope, params),
-         :ok <- Access.why_not(scope, :create, {:job, %{team_id: team.id}}) do
-      answer(scope, insert_new(scope, team, params, now), now)
+         :ok <- Access.why_not(scope, :create, {:job, %{team_id: team.id}}),
+         {:ok, opts} <- fiverr(params) do
+      answer(scope, insert_new(scope, team, params, now, opts), now)
     end
   end
+
+  defp fiverr(%{"source" => "fiverr"} = params) do
+    id = Uniq.UUID.uuid7()
+
+    with {:ok, kind} <- fiverr_kind(params["origin_kind"]),
+         {:ok, link} <- Link.fiverr(Link.fiverr_job_key(id), params["url"]),
+         do: {:ok, [id: id, link: link, origin_kind: kind]}
+  end
+
+  defp fiverr(%{"origin_kind" => kind}) when kind not in [nil, ""],
+    do: {:error, {:invalid, %{"origin_kind" => ["is only for a Fiverr job"]}}}
+
+  defp fiverr(_params), do: {:ok, []}
+
+  @doc false
+  # A Fiverr job's `origin_kind` (AQ-12 §11.4): brief, inquiry or order.
+  def fiverr_kind(kind) when kind in ["brief", "inquiry", "order"],
+    do: {:ok, String.to_existing_atom(kind)}
+
+  def fiverr_kind(kind) when kind in [nil, ""], do: {:error, {:missing, [:origin_kind]}}
+
+  def fiverr_kind(_kind),
+    do: {:error, {:invalid, %{"origin_kind" => ["is brief, inquiry or order"]}}}
 
   @doc """
   A new job in `team`'s pool from `POST /jobs`'s body, the check re-run in
@@ -117,6 +146,13 @@ defmodule Core.Jobs do
   `opts[:capture]` is the extension's (AQ-05 §10.1): the job's `origin` is
   `extension`, its `description_html` the sanitised page's, and
   `Core.Jobs.Capture` keeps the fields as a snapshot and the signals.
+  A new job with a company writes `job_posted` (or `job_reposted`) in the
+  same transaction (AQ-10 §6.1, `Core.Behaviour.Sources`).
+
+  AQ-12 §11.4's options: `link` (an identity made already, `Core.Jobs.Link`
+  — a Fiverr job's, keyed without a link), `id` (the new job's, when its key
+  names it), `origin` (`import`, `email`; `manual` or `extension`
+  otherwise), `origin_kind` and `origin_profile_id` (whose alert).
   """
   @spec insert_new(Scope.t(), map(), map(), DateTime.t(), keyword()) ::
           {:ok, Job.t()} | {:error, term()}
@@ -124,9 +160,10 @@ defmodule Core.Jobs do
     params = stringify(params)
     capture = opts[:capture]
 
-    with {:ok, link} <- link(params["url"]),
+    with {:ok, link} <- if(opts[:link], do: {:ok, opts[:link]}, else: Link.parse(params["url"])),
          {:ok, skills} <- skills(scope, params) do
-      Repo.transaction(fn -> insert(scope, team, {params, capture}, link, skills, now) end)
+      fn -> {:ok, insert(scope, team, {params, capture, opts}, link, skills, now)} end
+      |> Write.commit()
       |> case do
         {:error, :key_taken} -> exists(scope, existing_job(team.id, link.key))
         {:error, {:job_exists, job}} -> exists(scope, job)
@@ -135,7 +172,7 @@ defmodule Core.Jobs do
     end
   end
 
-  defp insert(scope, team, {params, capture}, link, skills, now) do
+  defp insert(scope, team, {params, capture, opts}, link, skills, now) do
     org_id = Scope.organisation_id(scope)
 
     with :none <- Check.existing(team.id, link.key),
@@ -151,7 +188,10 @@ defmodule Core.Jobs do
              "source_url" => link.url,
              "canonical_key" => link.key,
              "source_job_id" => link.source_job_id,
-             "origin" => if(capture, do: "extension", else: "manual"),
+             "id" => opts[:id],
+             "origin" => opts[:origin] || if(capture, do: "extension", else: "manual"),
+             "origin_kind" => opts[:origin_kind],
+             "origin_profile_id" => opts[:origin_profile_id],
              "description_html" => capture && capture[:description_html],
              "first_seen_at" => now,
              "last_seen_at" => now,
@@ -165,6 +205,8 @@ defmodule Core.Jobs do
          {:ok, _kept} <- Capture.write(scope, job, capture, now) do
       {:ok, _event} =
         Audit.record(scope, "created", job, after: Audit.snapshot(job, @created), now: now)
+
+      :ok = Sources.job_new(scope, job, now)
 
       job
     else
@@ -201,21 +243,6 @@ defmodule Core.Jobs do
       {:merged, job, _merge} -> job
       :none -> nil
     end
-  end
-
-  defp link(url) do
-    case JobKey.parse(url) do
-      {:ok, parsed} -> {:ok, Map.put(parsed, :url, web_link(url))}
-      {:error, :not_a_job} -> {:error, {:invalid, %{"url" => ["is not a job posting"]}}}
-      {:error, :not_a_link} when is_nil(url) -> {:error, {:missing, [:url]}}
-      {:error, :not_a_link} -> {:error, {:invalid, %{"url" => ["is not a job link"]}}}
-    end
-  end
-
-  # The link as pasted, trimmed, with its scheme.
-  defp web_link(url) do
-    url = String.trim(url)
-    if url =~ ~r{^[a-zA-Z][a-zA-Z0-9+.-]*://}, do: url, else: "https://" <> url
   end
 
   # ── Edit ────────────────────────────────────────────────────────────────────

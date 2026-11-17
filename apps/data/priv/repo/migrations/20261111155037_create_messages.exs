@@ -2,7 +2,7 @@ defmodule Data.Repo.Migrations.CreateMessages do
   use Ecto.Migration
 
   @moduledoc """
-  One message of a conversation (AQ-06 §5.2, §11.6), mCart's
+  One message of a conversation (AQ-06 §5.2, §11.6), tCart's
   `conversation_messages` kept: `is_internal` staff notes, the author as
   typed keys with a CHECK, tombstones (`deleted_at`).
 

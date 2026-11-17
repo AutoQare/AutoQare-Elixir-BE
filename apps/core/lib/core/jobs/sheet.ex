@@ -14,6 +14,7 @@ defmodule Core.Jobs.Sheet do
   alias Core.Jobs.Suggest
   alias Core.Leads.Sheet, as: LeadSheet
   alias Core.Tasks.Person
+  alias Data.Customers.{Customer, Profile}
   alias Data.JobParts
   alias Data.Jobs, as: Store
   alias Data.Jobs.Job
@@ -113,7 +114,12 @@ defmodule Core.Jobs.Sheet do
 
   # ── The row and the sheet ───────────────────────────────────────────────────
 
-  @doc "The list's row (§7.1); `best` is the job's best suggestion or `nil`."
+  @doc """
+  The list's row (§7.1); `best` is the job's best suggestion or `nil`.
+  AQ-12 §11.4: `origin_kind`, and `alert: {profile: {id, title,
+  customer_name}}` for a job an alert brought (`null` otherwise) — the
+  pool's *From an alert · Golang backend* chip.
+  """
   @spec row(Job.t(), map() | nil) :: map()
   def row(%Job{} = job, best) do
     %{
@@ -131,9 +137,23 @@ defmodule Core.Jobs.Sheet do
       first_seen_at: job.first_seen_at,
       status: job.status,
       archived_at: job.archived_at,
-      best_suggestion: best
+      best_suggestion: best,
+      origin_kind: job.origin_kind,
+      alert: alert(job)
     }
   end
+
+  defp alert(%Job{origin_kind: :alert, origin_profile: %Profile{} = profile}) do
+    customer =
+      case profile.customer do
+        %Customer{display_name: name} -> name
+        _not_loaded -> nil
+      end
+
+    %{profile: %{id: profile.id, title: profile.title, customer_name: customer}}
+  end
+
+  defp alert(_job), do: nil
 
   @doc "The money as one fact (QP3-9): an estimate is `source == platform_estimate`."
   @spec money(Job.t()) :: map()

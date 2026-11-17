@@ -1,10 +1,12 @@
 defmodule Core.Notifications.ChannelsTest do
   @moduledoc """
-  The planning rule (AQ-08 §6, §7.1, §11.4), **as a table over every kind
-  and chair**: each of the 32 kinds (AQ-09 adds two) plans exactly the ledger rows of §6 for
-  each chair — staff with a browser and the extension, staff with neither, a
-  customer with a browser, a customer with none — at the right moment.
-  Pure: no database.
+  The planning rule (AQ-08 §7.1; AQ-10B §11.4), **as a table over every
+  kind, audience and chair**: each of the 68 kinds plans exactly the
+  ledger rows its audience's channels give each chair — staff with a
+  browser and the extension, staff with neither, a customer with a
+  browser, a customer with none — at the right moment; then switches per
+  group and kind, offered channels, locks, quiet hours (push and the
+  extension only), snooze and folding. Pure: no database.
   """
 
   use ExUnit.Case, async: true
@@ -15,95 +17,59 @@ defmodule Core.Notifications.ChannelsTest do
   doctest Channels
 
   @now ~U[2026-11-12 06:00:00Z]
+  @kinds Map.new(Seed.kinds(), fn {key, staff, customer} -> {key, {staff, customer || staff}} end)
 
-  # AQ-08 §6, row by row: each kind's default channels.
-  @matrix %{
-    "tasks.assigned" => ~w(inapp push),
-    "tasks.customer_created" => ~w(inapp push),
-    "tasks.commented" => ~w(inapp push),
-    "tasks.mentioned" => ~w(inapp push),
-    "tasks.completed" => ~w(inapp),
-    "tasks.due_soon" => ~w(inapp digest),
-    "tasks.overdue" => ~w(inapp digest),
-    "tasks.nudged" => ~w(inapp push),
-    "leads.assigned" => ~w(inapp push),
-    "leads.moved" => ~w(inapp),
-    "leads.applied_again" => ~w(inapp),
-    "leads.customer_update" => ~w(inapp),
-    "leads.customer_milestone" => ~w(inapp push email),
-    "leads.follow_up_due" => ~w(inapp digest),
-    "leads.archive_warned" => ~w(inapp digest),
-    "leads.archived" => ~w(inapp digest),
-    "conversations.reply_received" => ~w(inapp push extension),
-    "conversations.triage_new" => ~w(inapp digest),
-    "conversations.forwarding_confirm" => ~w(inapp push email),
-    "meetings.scheduled" => ~w(inapp push email),
-    "meetings.changed" => ~w(inapp push email),
-    "meetings.day_before" => ~w(inapp push email),
-    "meetings.reminder" => ~w(inapp push),
-    "meetings.proposed" => ~w(inapp push),
-    "approvals.requested" => ~w(inapp push email),
-    "approvals.decided" => ~w(inapp push email),
-    "approvals.commented" => ~w(inapp push),
-    "approvals.due_soon" => ~w(inapp push email),
-    "approvals.overdue" => ~w(inapp push email),
-    "approvals.expired" => ~w(inapp push email),
-    "account.digest" => ~w(inapp email),
-    "account.push_test" => ~w(inapp push)
-  }
-
-  @passing ~w(meetings.reminder account.digest account.push_test)
-
-  # What each chair can have (§4): staff with a browser and a device, staff
-  # with neither, a customer with a browser (never the extension), a
-  # customer with none. Email is everyone's sign-in address.
   @chairs %{
-    staff_with_both: %{push: true, email: true, extension: true},
-    staff_bare: %{push: false, email: true, extension: false},
-    customer_with_browser: %{push: true, email: true, extension: false},
-    customer_bare: %{push: false, email: true, extension: false}
+    staff_with_both: {false, %{push: true, email: true, extension: true}},
+    staff_bare: {false, %{push: false, email: true, extension: false}},
+    customer_with_browser: {true, %{push: true, email: true, extension: false}},
+    customer_bare: {true, %{push: false, email: true, extension: false}}
   }
 
   @no_window %{quiet_hours_start: nil, quiet_hours_end: nil, zone: "Asia/Karachi"}
 
-  defp kind(key) do
-    group = key |> String.split(".") |> hd()
+  defp kind(key, customer? \\ false) do
+    {staff, customer} = Map.fetch!(@kinds, key)
 
     %{
       key: key,
-      group: group,
-      channels: Map.fetch!(@matrix, key),
-      can_ignore_quiet_hours: key in @passing,
-      can_disable: group != "account"
+      group: key |> String.split(".") |> hd(),
+      channels: if(customer?, do: customer, else: staff),
+      offered: Seed.offered(key, customer?),
+      only: nil,
+      can_ignore_quiet_hours: key in Seed.passing_quiet_hours(),
+      locked: key in Seed.locked(),
+      can_disable: true
     }
   end
 
-  defp plan(key, switches \\ %{}, targets, settings \\ @no_window, now \\ @now),
-    do: Channels.plan(kind(key), switches, targets, settings, now)
-
-  test "the reference seed holds §6's matrix: thirty-two kinds, three of them passing quiet hours" do
-    assert Map.new(Seed.kinds()) == @matrix
-    assert Enum.sort(Seed.passing_quiet_hours()) == Enum.sort(@passing)
+  defp plan(key, switches \\ %{}, chair \\ :staff_with_both, settings \\ @no_window, now \\ @now) do
+    {customer?, targets} = Map.fetch!(@chairs, chair)
+    settings = Map.put(settings, :customer?, customer?)
+    Channels.plan(kind(key, customer?), switches, targets, settings, now)
   end
 
-  test "every kind × every chair: exactly §6's ledger rows the chair can have, at the right moment" do
-    for {key, channels} <- @matrix, {chair, targets} <- @chairs do
-      expected =
-        for c <- [:push, :email, :extension],
-            Atom.to_string(c) in channels,
-            targets[c],
-            do: c
+  defp channels(rows), do: Enum.map(rows, & &1.channel)
 
-      planned = plan(key, targets)
+  test "every kind × every audience × every chair: exactly its channels the chair can have, at the right moment" do
+    for {key, {staff, customer}} <- @kinds,
+        {chair, {customer?, targets}} <- @chairs,
+        channels = if(customer?, do: customer, else: staff),
+        channels != [] do
+      expected = for c <- [:push, :email, :extension], "#{c}" in channels, targets[c], do: c
+      planned = plan(key, %{}, chair)
 
-      assert Enum.map(planned, & &1.channel) == expected, "#{key} for #{chair}"
+      assert channels(planned) == expected, "#{key} for #{chair}"
       refute Enum.any?(planned, & &1.deferred), "#{key} for #{chair} is not held"
 
       for %{channel: channel, deliver_after: at} <- planned do
+        group = key |> String.split(".") |> hd()
+
         wait =
-          if channel == :email and not String.starts_with?(key, ~w(meetings. account.)),
-            do: 600,
-            else: 0
+          if channel == :email and not customer? and group not in ~w(meetings account system) and
+               key not in Seed.locked(),
+             do: 600,
+             else: 0
 
         assert DateTime.diff(at, @now) == wait, "#{key} #{channel} for #{chair}"
       end
@@ -111,33 +77,68 @@ defmodule Core.Notifications.ChannelsTest do
   end
 
   test "in-app and the digest are never ledger rows" do
-    for key <- ~w(tasks.completed tasks.overdue leads.follow_up_due conversations.triage_new) do
-      assert plan(key, @chairs.staff_with_both) == []
+    for key <- ~w(tasks.completed tasks.due_soon leads.archived conversations.triage_stale) do
+      assert plan(key) == []
     end
   end
 
-  test "a group switch off stops that channel; on (or no row) brings the default back" do
-    both = @chairs.staff_with_both
+  test "a customer's email goes at once (QP10b-11); a staff member's waits ten minutes" do
+    assert [%{channel: :email, deliver_after: @now}] =
+             plan("tasks.commented", %{}, :customer_bare)
 
-    assert [:email] = plan("approvals.requested", %{push: false}, both) |> Enum.map(& &1.channel)
-    assert [:push] = plan("approvals.requested", %{email: false}, both) |> Enum.map(& &1.channel)
-
-    assert [:push] =
-             plan("conversations.reply_received", %{extension: false}, both)
-             |> Enum.map(& &1.channel)
-
-    assert [:push, :email] =
-             plan("approvals.requested", %{push: true, email: true}, both)
-             |> Enum.map(& &1.channel)
+    assert [%{channel: :email, deliver_after: at}] = plan("approvals.overdue", %{}, :staff_bare)
+    assert DateTime.diff(at, @now) == 600
   end
 
-  test "Account can't be turned off: its switches are ignored" do
-    off = %{push: false, email: false}
+  describe "switches" do
+    test "a group switch off stops that channel; on (or no row) brings the default back" do
+      assert [:email] = "approvals.requested" |> plan(%{group: %{push: false}}) |> channels()
+      assert [:push] = "approvals.requested" |> plan(%{group: %{email: false}}) |> channels()
 
-    assert [:email] = plan("account.digest", off, @chairs.staff_bare) |> Enum.map(& &1.channel)
+      assert [:push] =
+               "conversations.reply_received" |> plan(%{group: %{extension: false}}) |> channels()
 
-    assert [:push] =
-             plan("account.push_test", off, @chairs.staff_with_both) |> Enum.map(& &1.channel)
+      assert [:push, :email] =
+               "approvals.requested" |> plan(%{group: %{push: true, email: true}}) |> channels()
+    end
+
+    test "a kind switch off stops that channel; off at either level is off" do
+      off = %{push: false, email: true, extension: false, digest: true}
+      assert [:email] = "approvals.requested" |> plan(%{kind: off}) |> channels()
+
+      on = %{push: true, email: true, extension: false, digest: true}
+
+      assert [:push] =
+               "approvals.requested" |> plan(%{group: %{email: false}, kind: on}) |> channels()
+    end
+
+    test "an offered channel is off until the person turns it on" do
+      assert [:push] = "tasks.assigned" |> plan() |> channels()
+
+      on = %{push: true, email: true, extension: true, digest: true}
+      assert [:push, :email, :extension] = "tasks.assigned" |> plan(%{kind: on}) |> channels()
+    end
+
+    test "a locked kind ignores both switches" do
+      off = %{push: false, email: false, extension: false, digest: false}
+
+      assert [:email] =
+               "account.security" |> plan(%{group: off, kind: off}, :staff_bare) |> channels()
+
+      assert [:email] =
+               "account.extension_connected" |> plan(%{group: off, kind: off}) |> channels()
+    end
+
+    test "`only` narrows the channels, and names an offered one as asked for (a watch's email)" do
+      watch = Channels.narrow(kind("behaviour.watch_fired"), ["push", "email"], nil)
+      {_c, targets} = @chairs.staff_with_both
+
+      assert [:push, :email] =
+               watch |> Channels.plan(%{}, targets, @no_window, @now) |> channels()
+
+      quiet = Channels.narrow(kind("tasks.step_done"), [], nil)
+      assert quiet |> Channels.plan(%{}, targets, @no_window, @now) == []
+    end
   end
 
   describe "quiet hours (22:00–08:00 in Karachi)" do
@@ -150,40 +151,79 @@ defmodule Core.Notifications.ChannelsTest do
     @night ~U[2026-11-12 18:00:00Z]
     @opens ~U[2026-11-13 03:00:00.000000Z]
 
-    test "push, email and the extension wait for the window's end, marked deferred" do
-      both = @chairs.staff_with_both
+    test "push and the extension wait for the window's end, marked deferred; email doesn't (QP10b-6)" do
+      wait = DateTime.add(@night, 600, :second)
 
       assert [
                %{channel: :push, deliver_after: @opens, deferred: true},
-               %{channel: :email, deliver_after: @opens, deferred: true}
-             ] = plan("approvals.requested", %{}, both, @window, @night)
+               %{channel: :email, deliver_after: ^wait, deferred: false}
+             ] = plan("approvals.requested", %{}, :staff_with_both, @window, @night)
 
       assert [
                %{channel: :push, deliver_after: @opens, deferred: true},
                %{channel: :extension, deliver_after: @opens, deferred: true}
-             ] = plan("conversations.reply_received", %{}, both, @window, @night)
+             ] = plan("conversations.reply_received", %{}, :staff_with_both, @window, @night)
     end
 
-    test "the meeting reminders, the digest and the push test pass" do
-      both = @chairs.staff_with_both
+    test "the kinds that pass, and the locked ones, go now" do
+      for key <- Seed.passing_quiet_hours() ++ Seed.locked(),
+          row <-
+            plan(key, %{}, :staff_with_both, @window, @night) ++
+              plan(key, %{}, :customer_with_browser, @window, @night) do
+        refute row.deferred, key
+      end
+    end
+  end
 
-      for key <- @passing do
-        for row <- plan(key, %{}, both, @window, @night) do
-          refute row.deferred
-          assert row.deliver_after == @night
-        end
+  describe "snooze (QP10b-3)" do
+    @until ~U[2026-11-12 07:00:00Z]
+
+    test "push, the extension and email are held to its end, deferred" do
+      settings = Map.put(@no_window, :snoozed_until, @until)
+
+      assert [
+               %{channel: :push, deliver_after: @until, deferred: true},
+               %{channel: :extension, deliver_after: @until, deferred: true}
+             ] = plan("conversations.reply_received", %{}, :staff_with_both, settings)
+
+      assert [%{channel: :email, deliver_after: @until, deferred: true}] =
+               plan("tasks.commented", %{}, :customer_bare, settings)
+    end
+
+    test "a locked kind, the meeting reminder and the push test pass" do
+      settings = Map.put(@no_window, :snoozed_until, @until)
+
+      for key <- ~w(account.security meetings.reminder account.push_test),
+          row <- plan(key, %{}, :staff_with_both, settings) do
+        refute row.deferred, key
+        assert row.deliver_after == @now
       end
     end
 
-    test "outside the window nothing waits; an email that would land inside it does" do
-      both = @chairs.staff_with_both
-      # 21:55 in Karachi: push goes now, the email's 22:05 is inside.
-      before = ~U[2026-11-12 16:55:00Z]
+    test "a snooze ending inside quiet hours leaves push held to the window's end" do
+      settings =
+        @window |> Map.put(:snoozed_until, ~U[2026-11-12 20:00:00Z])
 
-      assert [
-               %{channel: :push, deliver_after: ^before, deferred: false},
-               %{channel: :email, deliver_after: @opens, deferred: true}
-             ] = plan("approvals.requested", %{}, both, @window, before)
+      rows = plan("tasks.assigned", %{}, :staff_with_both, settings, ~U[2026-11-12 10:00:00Z])
+
+      assert [%{channel: :push, deliver_after: ~U[2026-11-13 03:00:00.000000Z], deferred: true}] =
+               rows
+    end
+  end
+
+  describe "folding (QP10b-17)" do
+    test "a push within 10 minutes of another about the same subject is written folded" do
+      settings = Map.put(@no_window, :fold, true)
+
+      assert [%{channel: :push, skip_reason: :folded}, %{channel: :extension, skip_reason: nil}] =
+               plan("conversations.reply_received", %{}, :staff_with_both, settings)
+    end
+
+    test "the meeting reminder and a locked kind never fold" do
+      settings = Map.put(@no_window, :fold, true)
+
+      assert [%{channel: :push, skip_reason: nil} | _] =
+               plan("meetings.reminder", %{}, :staff_with_both, settings)
     end
   end
 end

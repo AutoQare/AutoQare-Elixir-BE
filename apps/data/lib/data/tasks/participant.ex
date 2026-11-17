@@ -1,6 +1,6 @@
 defmodule Data.Tasks.Participant do
   @moduledoc """
-  Somebody a task concerns (AQ-02 §5.1; mCart's): an assignee (`level`
+  Somebody a task concerns (AQ-02 §5.1; tCart's): an assignee (`level`
   primary or secondary), a watcher, and whether they muted it — one row per
   person. Staff only.
   """

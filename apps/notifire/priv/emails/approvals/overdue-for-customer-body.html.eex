@@ -1,0 +1,7 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph("Your team is still waiting for your decision.") %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Review it", @url) %>
+<%= link(@url) %>

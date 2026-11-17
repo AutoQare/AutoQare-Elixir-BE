@@ -89,6 +89,29 @@ defmodule Data.Contacts.Handle do
     if String.length(digits) >= 6, do: {:ok, digits}, else: {:error, "is not a phone number"}
   end
 
+  # AQ-12 §11.4: an Indeed account is its `Utils.ChannelKey` (`indeed:{email}`)
+  # when it reads as one; a Fiverr seller or buyer is their username, from
+  # `fiverr.com/{username}`, `@username` or as written.
+  defp by_kind(:indeed, value) do
+    case ChannelKey.key(:indeed, value) do
+      nil -> {:ok, String.downcase(value)}
+      key -> {:ok, key}
+    end
+  end
+
+  defp by_kind(:fiverr, value) do
+    username =
+      case Regex.run(~r{^(?:https?://)?(?:[a-z]+\.)?fiverr\.com/([^/?#]+)}i, value) do
+        [_link, name] -> name
+        nil -> String.trim_leading(value, "@")
+      end
+
+    case String.downcase(String.trim(username)) do
+      "" -> {:error, "is not a Fiverr username"}
+      name -> {:ok, name}
+    end
+  end
+
   defp by_kind(:other, value), do: {:ok, String.downcase(value)}
   defp by_kind(_kind, _value), do: {:error, "is not a kind of handle"}
 

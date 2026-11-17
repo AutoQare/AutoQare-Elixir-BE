@@ -273,23 +273,60 @@ defmodule Core.OrganisationTest do
       Core.Audit.record(admin, "updated", other, now: DateTime.add(@now, 1, :hour))
       _team_rows = Data.Audit.list_for_subject(org.id, "teams", backend.id)
 
+      where = &%{"$where" => &1}
+
       assert {:ok, [one], nil} =
-               Organisation.list_audit(admin, %{
-                 "subject_kind" => "teams",
-                 "subject_id" => backend.id
-               })
+               Organisation.list_audit(
+                 admin,
+                 where.(%{
+                   "subject_kind" => %{"$EQUAL" => "teams"},
+                   "subject_id" => %{"$EQUAL" => backend.id}
+                 })
+               )
 
       assert one.subject_id == backend.id
 
-      assert {:ok, [_only], nil} =
-               Organisation.list_audit(admin, %{
-                 "from" => DateTime.to_iso8601(DateTime.add(@now, 30, :minute))
-               })
+      day = @now |> DateTime.to_date() |> Date.to_iso8601()
+      next = @now |> DateTime.to_date() |> Date.add(1) |> Date.to_iso8601()
 
-      assert {:ok, [], nil} = Organisation.list_audit(admin, %{"actor" => Ecto.UUID.generate()})
+      assert {:ok, [_, _], nil} =
+               Organisation.list_audit(
+                 admin,
+                 where.(%{"occurred_at" => %{"$CAST_TO_DATE_LTE" => next}})
+               )
 
-      assert Organisation.list_audit(admin, %{"from" => "yesterday"}) ==
-               {:error, {:missing, :from}}
+      assert {:ok, [], nil} =
+               Organisation.list_audit(
+                 admin,
+                 where.(%{
+                   "occurred_at" => %{
+                     "$CAST_TO_DATE_GTE" => Date.to_iso8601(Date.add(DateTime.to_date(@now), 2))
+                   }
+                 })
+               )
+
+      assert {:ok, rows, nil} =
+               Organisation.list_audit(
+                 admin,
+                 where.(%{"occurred_at" => %{"$CAST_TO_DATE_EQUAL" => day}})
+               )
+
+      assert rows != []
+
+      assert {:ok, [], nil} =
+               Organisation.list_audit(
+                 admin,
+                 where.(%{"actor" => %{"$EQUAL" => Ecto.UUID.generate()}})
+               )
+
+      assert {:error, {:invalid_filter, %{"occurred_at" => _}}} =
+               Organisation.list_audit(
+                 admin,
+                 where.(%{"occurred_at" => %{"$CAST_TO_DATE_GTE" => "yesterday"}})
+               )
+
+      assert {:error, {:invalid_filter, %{"from" => _}}} =
+               Organisation.list_audit(admin, where.(%{"from" => "2026-01-01"}))
     end
 
     test "a team lead or a member cannot read it: the system admin's alone", %{

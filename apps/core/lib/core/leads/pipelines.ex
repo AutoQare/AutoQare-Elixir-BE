@@ -13,7 +13,7 @@ defmodule Core.Leads.Pipelines do
   - **The rules of a save**: every stage named; the engine stages keep the
     engine's order (`stage_kinds`) and their kinds; a custom stage sits
     between its anchor and the next engine stage, at most 6 per pipeline
-    (mCart's cap); the pipeline keeps its `applied` stage; a stage sent
+    (tCart's cap); the pipeline keeps its `applied` stage; a stage sent
     without a `key` is a new custom stage, whose key is made from its name
     and never one the pipeline used before.
   - **A stage's colour comes from its kind**, worked out by the frontend;

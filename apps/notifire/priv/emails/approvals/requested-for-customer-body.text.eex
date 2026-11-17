@@ -1,0 +1,12 @@
+Hi <%= @first_name || "there" %>,
+
+<%= @title %>
+
+Your team needs your decision before they go ahead.
+<%= if @body do %>
+
+<%= @body %>
+<% end %>
+
+<%= facts_text(@facts) %>
+<%= if @url do %>Review it: <%= @url %><% end %>

@@ -4,15 +4,15 @@ defmodule Core.Notifications.PopUps do
   calls `GET /ext/v1/notifications/pop-ups`, which **claims** the person's
   due extension rows in one statement (`UPDATE … RETURNING`, marked sent),
   so a second poll, or a second device, gets nothing. Rows in a group whose
-  extension switch is off are skipped first (`preference_off`): pop-ups
-  follow the person's settings. A row nobody claims within a day is
+  extension switch is off, or of a kind whose switch is (P10b), are
+  skipped first (`preference_off`): pop-ups follow the person's settings. A row nobody claims within a day is
   skipped by the sweep (`no_target`).
 
   Each item opens the console (`config :core, :app_urls`) at the
   notification's link with `n=<id>`, so the console marks it read.
   """
 
-  alias Data.Notifications.{Deliveries, Notification, Preferences}
+  alias Data.Notifications.{Deliveries, KindPreferences, Notification, Preferences}
   alias Data.Scope
 
   @most 20
@@ -26,9 +26,10 @@ defmodule Core.Notifications.PopUps do
 
       user_id ->
         off = Preferences.off_groups(user_id, :extension)
+        off_kinds = KindPreferences.off_kinds(user_id, :extension)
 
         items =
-          for n <- Deliveries.claim_extension(user_id, now, @most, off) do
+          for n <- Deliveries.claim_extension(user_id, now, @most, off, off_kinds) do
             %{
               id: n.id,
               kind: n.notification_kind_key,

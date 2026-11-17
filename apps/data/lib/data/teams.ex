@@ -92,6 +92,42 @@ defmodule Data.Teams do
     |> Repo.all()
   end
 
+  @doc """
+  The staff list's people (`GET /people`): the users with an open
+  membership in `team_ids`, and — `with_admins?` — the organisation's
+  system admins too, narrowed by `where` (`Data.Filters.People`; the
+  person joined as `:person`). `{:ok, users}` with their persons, or the
+  422 `invalid_filter`.
+  """
+  @spec people(binary(), [binary()], boolean(), term()) :: {:ok, [struct()]} | {:error, term()}
+  def people(organisation_id, team_ids, with_admins?, where) do
+    members =
+      from(m in TeamMember,
+        where: m.team_id in ^team_ids and is_nil(m.left_at),
+        select: m.user_id
+      )
+
+    admins =
+      from(a in Data.Organisations.OrgAdmin,
+        where: a.organisation_id == ^organisation_id and ^with_admins?,
+        select: a.user_id
+      )
+
+    base =
+      from(u in Data.Accounts.User,
+        as: :user,
+        join: p in assoc(u, :person),
+        as: :person,
+        where: u.id in subquery(members) or u.id in subquery(admins),
+        preload: [person: p]
+      )
+
+    context = %{organisation_id: organisation_id}
+
+    with {:ok, query} <- Data.Filters.where(base, Data.Filters.People, where, context),
+         do: {:ok, Repo.all(query)}
+  end
+
   @spec get_open_member(binary(), binary()) :: TeamMember.t() | nil
   def get_open_member(team_id, user_id) do
     from(m in TeamMember,
@@ -103,6 +139,11 @@ defmodule Data.Teams do
 
   @spec add_member(map()) :: {:ok, TeamMember.t()} | {:error, Ecto.Changeset.t()}
   def add_member(attrs), do: %TeamMember{} |> TeamMember.changeset(attrs) |> Repo.insert()
+
+  @doc "A member's own daily target (AQ-11 §5): a whole number, or nil for their profiles' sum."
+  @spec set_target(TeamMember.t(), map()) :: {:ok, TeamMember.t()} | {:error, Ecto.Changeset.t()}
+  def set_target(%TeamMember{} = member, attrs),
+    do: member |> TeamMember.target_changeset(attrs) |> Repo.update()
 
   @spec change_role(TeamMember.t(), atom() | String.t()) ::
           {:ok, TeamMember.t()} | {:error, Ecto.Changeset.t()}

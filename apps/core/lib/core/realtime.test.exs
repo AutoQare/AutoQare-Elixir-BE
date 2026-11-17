@@ -91,4 +91,13 @@ defmodule Core.RealtimeTest do
     {:ok, _} = Data.Teams.put_settings(c.backend.id, %{peer_leads: :view})
     assert Realtime.may_join?(c.muaz.id, topic)
   end
+
+  # AQ-12 §11.4: each step of an import, ids and the state only.
+  test "import_progress goes to the import's team, with its id, state and progress" do
+    import = %{id: "imp-1", team_id: "team-1", state: :checking, progress: 40}
+
+    assert Realtime.import_progress(import) ==
+             {"team:team-1", "import_progress",
+              %{import_id: "imp-1", state: "checking", progress: 40}}
+  end
 end

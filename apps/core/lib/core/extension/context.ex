@@ -5,7 +5,11 @@ defmodule Core.Extension.Context do
   is, and the profiles the person may act for.
 
   **The identity** is the profile link the extension read off the page,
-  turned into `Utils.ChannelKey`'s key for the site:
+  turned into `Utils.ChannelKey`'s key for the site — AQ-12 (QP12-18):
+  on Indeed, the signed-in account's email (`indeed:{email}`), so an
+  Indeed channel picks the acting profile as LinkedIn's does; YC and
+  Wellfound are save-only and send none (`none`, the profile picked by
+  hand):
 
   | `identity.state` | When |
   |---|---|

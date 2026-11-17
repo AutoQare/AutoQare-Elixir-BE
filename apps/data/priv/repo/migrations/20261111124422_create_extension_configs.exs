@@ -20,7 +20,12 @@ defmodule Data.Repo.Migrations.CreateExtensionConfigs do
       add(:published_at, :timestamptz, null: false)
     end
 
-    create(constraint(:extension_configs, :site_known, check: "site IN ('linkedin','upwork')"))
+    create(
+      constraint(:extension_configs, :site_known,
+        check: "site IN ('linkedin','upwork','indeed','yc_waas','wellfound')"
+      )
+    )
+
     create(constraint(:extension_configs, :version_positive, check: "version >= 1"))
 
     create(constraint(:extension_configs, :sha256_shape, check: "sha256 ~ '^[0-9a-f]{64}$'"))

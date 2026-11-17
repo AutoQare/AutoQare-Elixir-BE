@@ -1,0 +1,53 @@
+Message-ID: <alert-20261110.golang.4012233871@linkedin.com>
+Date: Tue, 10 Nov 2026 06:15:00 +0000
+From: LinkedIn Job Alerts <jobalerts-noreply@linkedin.com>
+To: Tanweer <tanweer@example.com>
+Subject: =?UTF-8?Q?=E2=80=9Cgolang_developer=E2=80=9D:_3_new_jobs?=
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alert-boundary-li"
+
+--alert-boundary-li
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Your job alert for golang developer
+3 new jobs match your preferences.
+
+Senior Golang Engineer
+Corvid Security
+Remote
+Actively recruiting
+View job: https://www.linkedin.com/comm/jobs/view/4012233871/?trackingId=Zm9vYmFy%3D%3D&refId=c2VhcmNo&lipi=urn%3Ali%3Apage%3Aemail_email_job_alert_digest_01
+
+Backend Developer (Go)
+Juniper Edge
+Karachi, Sindh, Pakistan (Hybrid)
+3 connections work here
+View job: https://www.linkedin.com/comm/jobs/view/4012233999/?trackingId=YmF6cXV4%3D%3D&refId=c2VhcmNo
+
+Platform Engineer
+Northwind Labs
+European Union (Remote)
+$90K/yr - $120K/yr
+View job: https://www.linkedin.com/comm/jobs/view/4012234111/?trackingId=cXV1eA%3D%3D&refId=c2VhcmNo
+
+See all jobs: https://www.linkedin.com/comm/jobs/search?keywords=golang%20developer&origin=JOB_ALERT_EMAIL
+
+You are receiving Job Alert emails. Unsubscribe: https://www.linkedin.com/comm/psettings/email-unsubscribe?lipi=urn
+This email was intended for Tanweer (a made-up alert for AutoQare's tests).
+
+--alert-boundary-li
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><body>
+<h2>Your job alert for golang developer</h2>
+<table>
+<tr><td><a href="https://www.linkedin.com/comm/jobs/view/4012233871/?trackingId=Zm9vYmFy%3D%3D&amp;refId=c2VhcmNo">Senior Golang Engineer</a><p>Corvid Security &middot; Remote</p></td></tr>
+<tr><td><a href="https://www.linkedin.com/comm/jobs/view/4012233999/?trackingId=YmF6cXV4%3D%3D&amp;refId=c2VhcmNo">Backend Developer (Go)</a><p>Juniper Edge &middot; Karachi, Sindh, Pakistan (Hybrid)</p></td></tr>
+<tr><td><a href="https://www.linkedin.com/comm/jobs/view/4012234111/?trackingId=cXV1eA%3D%3D&amp;refId=c2VhcmNo">Platform Engineer</a><p>Northwind Labs &middot; European Union (Remote)</p></td></tr>
+</table>
+<p><a href="https://www.linkedin.com/comm/jobs/search?keywords=golang%20developer">See all jobs</a></p>
+</body></html>
+
+--alert-boundary-li--

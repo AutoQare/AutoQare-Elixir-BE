@@ -1,6 +1,6 @@
 defmodule Core.Tasks.Act do
   @moduledoc """
-  The verbs that move a task (AQ-02 §7.2, §7.3), mCart's pattern: **load
+  The verbs that move a task (AQ-02 §7.2, §7.3), tCart's pattern: **load
   → permission → at-state check → move → tell → log → broadcast**, one
   transaction. Every move carries the state the client saw (`from`); a task
   that moved meanwhile answers `{:error, {:task_moved, task}}`, the 409
@@ -290,7 +290,9 @@ defmodule Core.Tasks.Act do
       )
 
     event = if at, do: "task_deleted", else: "task_updated"
-    {:ok, updated, Realtime.task_events(event, task, updated)}
+    # AQ-10B §5.2 T12: archived under its assignees.
+    told = if at, do: Notices.removed(scope, task, at), else: []
+    {:ok, updated, [told, Realtime.task_events(event, task, updated)]}
   end
 
   @doc "`DELETE /tasks/:id`: a draft, by its author (QP2-12). It told nobody, so nothing is lost."

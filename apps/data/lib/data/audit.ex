@@ -25,27 +25,29 @@ defmodule Data.Audit do
   end
 
   @doc """
-  A page of the log, newest first, by keyset. `filters` may name
-  `subject_kind`, `subject_id`, `actor_user_id`, `from`, `to`, `team_ids`
-  (rows about those teams: the team itself, or a row whose before/after names
-  the team) and `cursor` (`{occurred_at, id}` of the last row seen).
+  A page of the log, newest first, by keyset. `base` decides whose rows:
+  `team_ids` (rows about those teams: the team itself, or a row whose
+  before/after names the team; `nil` every team's), `customer_id` (rows
+  about the customer) and `cursor` (`{occurred_at, id}` of the last row
+  seen). `where` is the list's `$where` (`Data.Filters.Audit`), `context`
+  its zone. `{:ok, events}`, or the 422 `invalid_filter`.
   """
-  @spec list(binary(), map(), pos_integer()) :: [AuditEvent.t()]
-  def list(organisation_id, filters, limit) do
-    from(e in AuditEvent,
-      where: e.organisation_id == ^organisation_id,
-      order_by: [desc: e.occurred_at, desc: e.id],
-      limit: ^limit,
-      preload: [actor_user: :person]
-    )
-    |> filter(:subject_kind, filters[:subject_kind])
-    |> filter(:subject_id, filters[:subject_id])
-    |> filter(:actor_user_id, filters[:actor_user_id])
-    |> from_to(filters[:from], filters[:to])
-    |> teams(filters[:team_ids])
-    |> about_customer(filters[:customer_id])
-    |> cursor(filters[:cursor])
-    |> Repo.all()
+  @spec list(binary(), map(), term(), map(), pos_integer()) ::
+          {:ok, [AuditEvent.t()]} | {:error, term()}
+  def list(organisation_id, base, where, context, limit) do
+    query =
+      from(e in AuditEvent,
+        where: e.organisation_id == ^organisation_id,
+        order_by: [desc: e.occurred_at, desc: e.id],
+        limit: ^limit,
+        preload: [actor_user: :person]
+      )
+      |> teams(base[:team_ids])
+      |> about_customer(base[:customer_id])
+      |> cursor(base[:cursor])
+
+    with {:ok, query} <- Data.Filters.where(query, Data.Filters.Audit, where, context),
+         do: {:ok, Repo.all(query)}
   end
 
   # AQ-04B QP4b-22: rows about a customer — the customer's own, and every
@@ -63,14 +65,6 @@ defmodule Data.Audit do
         fragment("(? ->> 'customer_id') = ?", e.before, ^text)
     )
   end
-
-  defp filter(query, _field, nil), do: query
-  defp filter(query, field, value), do: where(query, [e], field(e, ^field) == ^value)
-
-  defp from_to(query, nil, nil), do: query
-  defp from_to(query, %DateTime{} = from, nil), do: where(query, [e], e.occurred_at >= ^from)
-  defp from_to(query, nil, %DateTime{} = to), do: where(query, [e], e.occurred_at <= ^to)
-  defp from_to(query, from, to), do: query |> from_to(from, nil) |> from_to(nil, to)
 
   defp teams(query, nil), do: query
 

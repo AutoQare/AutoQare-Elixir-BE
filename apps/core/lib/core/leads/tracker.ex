@@ -1,18 +1,26 @@
 defmodule Core.Leads.Tracker do
   @moduledoc """
-  The Tracker (AQ-04B §8.1, §8.4, §9, QP4b-15, QP4b-18): **every lead of the
-  current team as one sheet**, by the team's `peer_leads` (a member at
-  `hidden` sees their own), with the board's filters plus `label`,
-  `missing` (`money`, `cv`) and `state`; `group` (`tracker_groups`), `sort`
-  (`tracker_columns`), `dir` (`asc` · `desc`), `cursor`. Keyset pages of
-  50 with the `total`; when grouped, the groups with their counts over
-  every matching row (rows run group by group, each sorted).
+  The Tracker (AQ-04B §8.1, §8.4, §9, QP4b-15, QP4b-18, AQ-11B §11.4):
+  **every lead of the current team as one sheet**, by the team's
+  `peer_leads` (a member at `hidden` sees their own). `$where` is
+  `Data.Filters.Leads`' — the board's filters, `state`, `label`,
+  `missing`, `pipeline` and P11's tile filters (`applied_on`,
+  `applied_by`, `had_response`, `interviewed_on`, `stage_kind`,
+  `follow_up`); `$order` is `Data.Filters.TrackerSort`'s (one of
+  `tracker_columns`, `$ASC` · `$DESC`; last activity, newest first,
+  without one); `group` (`tracker_groups`) and `cursor` are its own. Pages
+  of 50 with the `total`; with an *Applied* filter, `applications` beside
+  it (AQ-11B §11.5: the matching `applied` rows on every listed lead, so a
+  lead applied twice shows as "1 lead · 2 applications", as the tiles
+  count); when grouped, the groups with their counts over every matching
+  row (rows run group by group, each sorted).
 
-  The rows are made from one read of the team's matching leads (a team's
-  worth) and their signals (`Core.Leads.Signals`), then sorted here, so a
-  column computed on read — *Next*, labels, *Missing* — sorts like any
-  other. `cursor` is the last row seen (its id and place), so *More*
-  continues after it even when a row moved meanwhile.
+  The rows are one read of the team's matching leads (a team's worth),
+  sorted by the database; *Next*, labels and *Missing* are computed on read
+  (`Core.Leads.Signals`) and have no SQL form, so a sort on one of them
+  **runs here, in memory**, on the same rows. `cursor` is the last row seen
+  (its id and place), so *More* continues after it even when a row moved
+  meanwhile.
 
   `csv/3` (`GET /tracker.csv`) is the same query, every matching row and
   every column (none is hidden from a reader of the team's leads), UTF-8
@@ -22,17 +30,18 @@ defmodule Core.Leads.Tracker do
   """
 
   alias Core.Access
-  alias Core.Access.Leads, as: LeadAccess
   alias Core.Audit
   alias Core.Jobs
   alias Core.Jobs.Sheet, as: JobSheet
   alias Core.Leads.{Board, Pipelines, Signals, Words}
   alias Core.Retention.Policy
   alias Core.Tasks.Person
+  alias Data.Filters.TrackerSort
   alias Data.Leads, as: Store
   alias Data.Repo
   alias Data.Scope
   alias Data.Vocabulary
+  alias Plug.Conn.Query
 
   @page 50
   @state_order %{todo: 0, in_progress: 1, on_hold: 2, done: 3}
@@ -59,20 +68,36 @@ defmodule Core.Leads.Tracker do
 
   # ── The page ────────────────────────────────────────────────────────────────
 
-  @doc "`GET /tracker`: `{items, next_cursor, total, groups}`."
+  @doc """
+  `GET /tracker`: `{items, next_cursor, total, applications, groups}`.
+  `applications` (AQ-11B §11.5) is `nil` unless the top-level `$where`
+  names `applied_on`, `applied_by` or `had_response`; then it counts the
+  ledger's `applied` rows on every listed lead (all pages, after every
+  filter, `follow_up` too) that match those parts together — what the
+  *Applications* and *Responses* tiles count, a lead applied twice twice —
+  so the head can say "8 leads · 9 applications".
+  """
   @spec page(Scope.t(), map(), DateTime.t()) :: {:ok, map()} | {:error, term()}
   def page(%Scope{} = scope, params, %DateTime{} = now) do
     params = stringify(params)
 
-    with {:ok, %{rows: rows, group: group}} <- rows(scope, params, now),
+    with {:ok, %{rows: rows, group: group, team: team}} <- rows(scope, params, now),
          {:ok, start} <- cursor(rows, params["cursor"]) do
       {items, rest} = rows |> Enum.drop(start) |> Enum.split(@page)
+
+      applications =
+        Store.applications(
+          Enum.map(rows, & &1.id),
+          params["$where"],
+          Board.context(scope, team, now)
+        )
 
       {:ok,
        %{
          items: items,
          next_cursor: if(rest == [], do: nil, else: encode(List.last(items), start + @page - 1)),
          total: length(rows),
+         applications: applications,
          groups: groups(group, rows)
        }}
     end
@@ -101,7 +126,7 @@ defmodule Core.Leads.Tracker do
           after: %{
             "team_id" => team.id,
             "rows" => length(rows),
-            "query" => params |> Map.drop(~w(team team_id cursor)) |> URI.encode_query()
+            "query" => params |> Map.drop(~w(team team_id cursor)) |> Query.encode()
           },
           now: now
         )
@@ -157,27 +182,15 @@ defmodule Core.Leads.Tracker do
   defp rows(scope, params, now) do
     with :ok <- Access.why_not(scope, :read, {:job, %{}}),
          {:ok, team} <- Jobs.team(scope, params),
-         {:ok, filters} <- Board.filters(scope, team, params, now),
-         {:ok, filters} <- pipeline(filters, params["pipeline"]),
-         {:ok, missing} <- missing(params["missing"]),
          {:ok, group} <- choice(params["group"], Vocabulary.tracker_groups(), "group", "none"),
-         {:ok, sort} <- choice(params["sort"], Vocabulary.tracker_columns(), "sort", nil),
-         {:ok, dir} <- dir(params["dir"], sort) do
-      reach = LeadAccess.board_reach(scope, team.id)
-      visible = if match?({:own, _}, reach), do: elem(reach, 1), else: :all
-
-      leads =
-        team.id
-        |> Store.for_team(Map.put(filters, :visible_to, visible))
-        |> Repo.preload(:document)
-
-      ctx = Signals.context(scope.organisation, leads, now)
-
+         {:ok, sort} <- sort(params["$order"]),
+         {:ok, leads, ctx} <-
+           Board.leads(scope, team, params["$where"], now, order: sql_order(sort)) do
       rows =
         leads
+        |> Repo.preload(:document)
         |> Enum.map(&row(&1, Signals.for_lead(ctx, &1)))
-        |> Enum.filter(&(missing == [] or Enum.any?(missing, fn m -> m in &1.missing end)))
-        |> order(group, sort || "last_activity", dir)
+        |> arrange(group, sort)
 
       {:ok, %{rows: rows, group: group, team: team}}
     end
@@ -221,7 +234,31 @@ defmodule Core.Leads.Tracker do
 
   # ── Order, groups, the cursor ───────────────────────────────────────────────
 
-  defp order(rows, group, sort, dir) do
+  # One column, or none (last activity, newest first): `{column, :asc | :desc}`.
+  defp sort(order) do
+    case Data.Filters.order(TrackerSort, order) do
+      {:ok, []} -> {:ok, nil}
+      {:ok, [{column, dir}]} -> {:ok, {column, if(dir == "$ASC", do: :asc, else: :desc)}}
+      {:ok, _several} -> {:error, {:invalid_filter, %{"$order" => ["sorts by one column"]}}}
+      error -> error
+    end
+  end
+
+  defp sql_order(nil), do: nil
+  defp sql_order({column, :asc}), do: TrackerSort.build(%{column => "$ASC"})
+  defp sql_order({column, :desc}), do: TrackerSort.build(%{column => "$DESC"})
+
+  # The database sorted the rows; a group keeps that order within it (a
+  # stable sort), and a column computed on read sorts here.
+  defp arrange(rows, group, {column, dir}) do
+    if column in TrackerSort.in_memory(),
+      do: in_memory(rows, group, column, dir),
+      else: Enum.sort_by(rows, &group_key(group, &1))
+  end
+
+  defp arrange(rows, group, nil), do: Enum.sort_by(rows, &group_key(group, &1))
+
+  defp in_memory(rows, group, sort, dir) do
     Enum.sort(rows, fn a, b ->
       ga = group_key(group, a)
       gb = group_key(group, b)
@@ -240,28 +277,7 @@ defmodule Core.Leads.Tracker do
   defp before?(a, b, :asc, _ia, _ib), do: a < b
   defp before?(a, b, :desc, _ia, _ib), do: a > b
 
-  defp sort_key("applied", r), do: at(r.applied_at)
-  defp sort_key("title", r), do: down(r.title)
-  defp sort_key("company", r), do: r.company && down(r.company.name)
-  defp sort_key("source", r), do: r.source && to_string(r.source)
-  defp sort_key("customer", r), do: down(r.customer.display_name)
-  defp sort_key("profile", r), do: down(r.profile.title)
-  defp sort_key("owner", r), do: r.owner && down(r.owner.name)
-
-  defp sort_key("state", r),
-    do: {Map.fetch!(@state_order, r.state), (r.stage && r.stage.position) || 0}
-
-  defp sort_key("outcome", r), do: r.outcome && to_string(r.outcome)
   defp sort_key("next", r), do: r.next && at(r.next.at)
-  defp sort_key("last_activity", r), do: at(r.last_activity_at)
-
-  defp sort_key("money", %{money: %{currency: c} = m}) when is_binary(c),
-    do: {c, m.min_minor || m.max_minor}
-
-  defp sort_key("money", _r), do: nil
-  defp sort_key("workplace", r), do: r.workplace && to_string(r.workplace)
-  defp sort_key("engagement", r), do: r.engagement && to_string(r.engagement)
-  defp sort_key("cv", r), do: r.cv && {down(r.cv.label), r.cv.version}
   defp sort_key("labels", %{labels: []}), do: nil
   defp sort_key("labels", r), do: r.labels |> Enum.map_join(", ", & &1.name) |> down()
   defp sort_key("missing", r), do: length(r.missing)
@@ -323,30 +339,6 @@ defmodule Core.Leads.Tracker do
 
   # ── Parameters ──────────────────────────────────────────────────────────────
 
-  defp pipeline(filters, nil), do: {:ok, filters}
-  defp pipeline(filters, ""), do: {:ok, filters}
-
-  defp pipeline(filters, key) do
-    if to_string(key) in Vocabulary.pipeline_keys(),
-      do: {:ok, Map.put(filters, :pipeline_key, String.to_existing_atom(to_string(key)))},
-      else: invalid("pipeline", "is employment or freelance")
-  end
-
-  defp missing(nil), do: {:ok, []}
-
-  defp missing(value) do
-    values =
-      value
-      |> to_string()
-      |> String.split(",", trim: true)
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-
-    if Enum.all?(values, &(&1 in @missing)),
-      do: {:ok, values},
-      else: invalid("missing", "is money or cv")
-  end
-
   defp choice(nil, _allowed, _field, default), do: {:ok, default}
   defp choice("", _allowed, _field, default), do: {:ok, default}
 
@@ -355,14 +347,6 @@ defmodule Core.Leads.Tracker do
       do: {:ok, to_string(value)},
       else: invalid(field, "is not one of the list")
   end
-
-  # The default: last activity, newest first; any other column, A→Z.
-  defp dir(nil, nil), do: {:ok, :desc}
-  defp dir(nil, _sort), do: {:ok, :asc}
-  defp dir("", sort), do: dir(nil, sort)
-  defp dir("asc", _sort), do: {:ok, :asc}
-  defp dir("desc", _sort), do: {:ok, :desc}
-  defp dir(_other, _sort), do: invalid("dir", "is asc or desc")
 
   defp at(nil), do: nil
   defp at(%DateTime{} = at), do: DateTime.to_unix(at, :microsecond)

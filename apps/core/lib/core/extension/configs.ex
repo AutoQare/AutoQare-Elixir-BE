@@ -8,12 +8,13 @@ defmodule Core.Extension.Configs do
 
   Contract 1, as pinned:
 
-      {site, contract: 1,
+      {site, contract: 1, save_only?: bool,
        pages:        {<page_kind>: {url: [substring | "re:<regex>"], ready: [css]}},
-       fields:       {<field key>: {on: <page_kind>, css: [css] (1–6),
+       fields:       {<field key>: {on: <page_kind> | [<page_kind>], css: [css] (1–6),
                       read: "text" | "href" | "html" | "present" | "attr:<name>",
-                      required: bool, all?: bool}},
-       identity:     {css: [css], read: "href"},
+                      required: bool, all?: bool, match?: regex,
+                      required_when?: {apply_kind: [apply kind]}}},
+       identity:     {css: [css], read: "href" | "text"} (optional when save_only),
        confirmation: {on: <page_kind>, css: [css], read: "present"}?,
        apply:        {on: "job", easy_css?: [css], external_css?: [css]}?}
 
@@ -21,8 +22,42 @@ defmodule Core.Extension.Configs do
   (`title`, `upwork.proposals_text`, `upwork.client.rating_text`) — AQ-06
   §11.6 adds the `thread` page's (`other_profile_url`, `other_name`,
   `messages` and each message's `external_id`, `side`, `sent_text`,
-  `text`); a page kind is `ext_page_kinds`'s, and every `on` names a page
-  of the document.
+  `text`); AQ-10 §11.4 adds the presence drafts, all optional
+  (`thread.other_online`, `thread.other_last_seen_text`,
+  `thread.other_active_text`); a page kind is `ext_page_kinds`'s, and every
+  `on` names a page of the document.
+
+  AQ-12 §11.4 adds, for Indeed, YC Work at a Startup and Wellfound:
+
+  - `save_only` (a boolean, YC's and Wellfound's `true`): the site is read
+    only on a press, so its document **may have no `identity`**; without
+    it, `identity` stays required;
+  - `identity.read: "text"` beside `"href"`: Indeed shows the signed-in
+    account's email, not a profile link (`Utils.ChannelKey`'s
+    `indeed:{email}`);
+  - a field's `on` as one page kind or a list of them (Indeed's title,
+    company and place are read on its job page and its post-apply page);
+  - the sites' field keys: `indeed.easily_apply`,
+    `indeed.responsive_employer`, `indeed.urgently_hiring`,
+    `indeed.job_type_text`, `indeed.work_setting_text`; `yc.batch_text`,
+    `yc.team_size_text`, `yc.stage_text`, `yc.experience_text`,
+    `yc.visa_text`, `yc.equity_text`; `wellfound.stage_text`,
+    `wellfound.remote_policy_text`, `wellfound.timezone_text`,
+    `wellfound.visa_text`, `wellfound.equity_text`.
+
+  AQ-12C §4.2 adds, both optional and backward compatible:
+
+  - `match` on a field (or a message member): a regular expression, tested
+    without regard to case. Each selector tries every element it finds, in
+    order, and the first whose value matches wins; with a group, the value
+    is the first group, trimmed; when none matches, the field is null (a
+    miss, if required). A line is read by what it says, never by its
+    position. One that doesn't compile is refused;
+  - `required_when` on an optional field: `{"apply_kind": ["external_ats"]}`
+    makes it a miss when it reads nothing and the apply kind read is one of
+    those (LinkedIn's apply link on the company's site). Only `apply_kind`,
+    only the reader's kinds (`in_platform_easy`, `external_ats`,
+    `proposal`), and never on a field already `required`.
   """
 
   alias Core.Access
@@ -46,10 +81,19 @@ defmodule Core.Extension.Configs do
                  upwork.client.active_hires_text upwork.client.avg_rate_text
                  upwork.client.member_since_text
                  other_profile_url other_name messages messages.external_id messages.side
-                 messages.sent_text messages.text)
-  @top ~w(site contract pages fields identity confirmation apply)
+                 messages.sent_text messages.text
+                 thread.other_online thread.other_last_seen_text thread.other_active_text
+                 indeed.easily_apply indeed.responsive_employer indeed.urgently_hiring
+                 indeed.job_type_text indeed.work_setting_text
+                 yc.batch_text yc.team_size_text yc.stage_text yc.experience_text yc.visa_text
+                 yc.equity_text
+                 wellfound.stage_text wellfound.remote_policy_text wellfound.timezone_text
+                 wellfound.visa_text wellfound.equity_text)
+  @top ~w(site contract save_only pages fields identity confirmation apply)
   @sites Vocabulary.ext_sites() |> Enum.map(&String.to_atom/1)
   @reads ~w(text href html present)
+  # The apply kinds the extension's reader reads (`required_when`, AQ-12C §4.2).
+  @apply_kinds ~w(in_platform_easy external_ats proposal)
 
   @doc "The field keys a document may read (§11.4)."
   def field_keys, do: @field_keys
@@ -76,9 +120,16 @@ defmodule Core.Extension.Configs do
         unknown(doc, @top, ""),
         site(doc["site"]),
         if(doc["contract"] == 1, do: [], else: ["contract: is not 1"]),
+        if(doc["save_only"] in [nil, true, false],
+          do: [],
+          else: ["save_only: is not true or false"]
+        ),
         required(doc, "pages", &pages/1),
         required(doc, "fields", &fields(&1, pages)),
-        required(doc, "identity", &identity/1),
+        if(doc["save_only"] == true,
+          do: optional(doc, "identity", &identity/1),
+          else: required(doc, "identity", &identity/1)
+        ),
         optional(doc, "confirmation", &confirmation(&1, pages)),
         optional(doc, "apply", &apply_rule(&1, pages))
       ])
@@ -164,20 +215,61 @@ defmodule Core.Extension.Configs do
 
   defp field(key, field, pages) do
     [
-      unknown(field, ~w(on css read required all), key <> "."),
+      unknown(field, ~w(on css read required all match required_when), key <> "."),
       on(field["on"], key, pages),
       css(field["css"], key <> ".css", 1..6),
       read(field["read"], key),
       if(is_boolean(field["required"]), do: [], else: ["#{key}.required: is not true or false"]),
-      if(field["all"] in [nil, true, false], do: [], else: ["#{key}.all: is not true or false"])
+      if(field["all"] in [nil, true, false], do: [], else: ["#{key}.all: is not true or false"]),
+      if(Map.has_key?(field, "match"), do: match(field["match"], key), else: []),
+      if(Map.has_key?(field, "required_when"),
+        do: required_when(field["required_when"], field["required"], key),
+        else: []
+      )
     ]
   end
+
+  # AQ-12C §4.2: a line read by what it says. The extension tests it without
+  # regard to case, so it is compiled here the same way.
+  defp match(source, key) when is_binary(source) do
+    case Regex.compile(source, "i") do
+      {:ok, _regex} when source != "" -> []
+      _blank_or_wrong -> ["#{key}.match: is not a regular expression"]
+    end
+  end
+
+  defp match(_source, key), do: ["#{key}.match: is not a regular expression"]
+
+  # AQ-12C §4.2: an optional field required only when the apply kind read is
+  # one of a list, `{"apply_kind": ["external_ats"]}`.
+  defp required_when(_when, true, key),
+    do: ["#{key}.required_when: is for a field not required"]
+
+  defp required_when(when_, _required, key) when when_ == %{},
+    do: ["#{key}.required_when: names nothing"]
+
+  defp required_when(%{} = when_, _required, key) do
+    Enum.flat_map(when_, fn
+      {"apply_kind", kinds} -> apply_kinds(kinds, "#{key}.required_when.apply_kind")
+      {other, _kinds} -> ["#{key}.required_when.#{other}: is not apply_kind"]
+    end)
+  end
+
+  defp required_when(_when, _required, key), do: ["#{key}.required_when: is not an object"]
+
+  defp apply_kinds([_ | _] = kinds, path) do
+    for {kind, i} <- Enum.with_index(kinds),
+        kind not in @apply_kinds,
+        do: "#{path}[#{i}]: is not an apply kind"
+  end
+
+  defp apply_kinds(_kinds, path), do: ["#{path}: names no apply kind"]
 
   defp identity(identity) do
     [
       unknown(identity, ~w(css read), ""),
       css(identity["css"], "css"),
-      if(identity["read"] == "href", do: [], else: ["read: is not href"])
+      if(identity["read"] in ["href", "text"], do: [], else: ["read: is not href or text"])
     ]
   end
 
@@ -199,7 +291,19 @@ defmodule Core.Extension.Configs do
     ]
   end
 
-  defp on(kind, where, pages, style \\ :field) do
+  # A field reads on one page kind or several (AQ-12 §11.4); the
+  # confirmation and the apply rule on one.
+  defp on(kinds, where, pages, style \\ :field)
+
+  defp on([_ | _] = kinds, where, pages, :field) do
+    kinds
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {kind, i} -> on(kind, "#{where}.on[#{i}]", pages, :bare) end)
+  end
+
+  defp on([], where, _pages, :field), do: ["#{where}.on: names no page"]
+
+  defp on(kind, where, pages, style) do
     path = if style == :bare, do: where, else: where <> ".on"
 
     cond do
@@ -285,18 +389,15 @@ defmodule Core.Extension.Configs do
   end
 
   @doc """
-  `GET /team/v1/extension/configs?site`: every published version, newest
-  first — `site` narrows — for the system admin (404 for anyone else).
+  `GET /team/v1/extension/configs?$where`: every published version, newest
+  first, for the system admin (404 for anyone else). `$where` is
+  `Data.Filters.ExtensionConfigs`' (`site`, `version`).
   """
   @spec list(Scope.t(), map()) :: {:ok, [map()]} | {:error, term()}
   def list(%Scope{} = scope, params) do
     with :ok <- Access.why_not(scope, :read_configs, :extension),
-         {:ok, site} <- optional_site(Utils.presence(to_string(params["site"] || ""))),
-         do: {:ok, Store.configs(site)}
+         do: Store.configs(params["$where"])
   end
-
-  defp optional_site(nil), do: {:ok, nil}
-  defp optional_site(site), do: site_param(site)
 
   defp site_param(site) do
     if is_binary(site) and site in Vocabulary.ext_sites(),

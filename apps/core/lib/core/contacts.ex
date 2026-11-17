@@ -37,21 +37,21 @@ defmodule Core.Contacts do
          do: {:ok, contact}
   end
 
-  @doc "`GET /contacts?q&company_id&cursor`: the contacts page, `{items, next_cursor}`."
+  @doc """
+  `GET /contacts?$where&cursor`: the contacts page, `{items, next_cursor}`;
+  `$where` is `Data.Filters.Contacts`' (`q`, `company_id`).
+  """
   @spec list(Scope.t(), map()) :: {:ok, map()} | {:error, term()}
   def list(%Scope{} = scope, params) do
     params = Leads.stringify(params)
 
     with :ok <- Access.why_not(scope, :read, {:contact, %{}}),
-         {:ok, after_row} <- cursor(params["cursor"]) do
-      rows =
-        Store.list(Scope.organisation_id(scope),
-          q: blank_normalized(params["q"]),
-          company_id: Leads.blank(params["company_id"]),
-          after: after_row,
-          limit: @page
-        )
-
+         {:ok, after_row} <- cursor(params["cursor"]),
+         {:ok, rows} <-
+           Store.list(Scope.organisation_id(scope), params["$where"],
+             after: after_row,
+             limit: @page
+           ) do
       items = Enum.take(rows, @page)
 
       next =
@@ -62,10 +62,13 @@ defmodule Core.Contacts do
     end
   end
 
-  @doc "`GET /contacts/:id`: the contact with its leads (those the caller sees)."
-  @spec get(Scope.t(), term()) :: {:ok, map()} | {:error, term()}
-  def get(%Scope{} = scope, id) do
-    with {:ok, contact} <- fetch(scope, :read, id), do: {:ok, view(scope, contact)}
+  @doc "`GET /contacts/:id`: the contact, the leads the caller sees, its `behaviour` (AQ-10; `nil` unseen)."
+  @spec get(Scope.t(), term(), DateTime.t()) :: {:ok, map()} | {:error, term()}
+  def get(%Scope{} = scope, id, %DateTime{} = now) do
+    with {:ok, contact} <- fetch(scope, :read, id) do
+      behaviour = Core.Behaviour.summary_for(scope, :contact, contact.id, now)
+      {:ok, Map.put(view(scope, contact), :behaviour, behaviour)}
+    end
   end
 
   # ── The match check ─────────────────────────────────────────────────────────
@@ -469,8 +472,6 @@ defmodule Core.Contacts do
         end
     end
   end
-
-  defp blank_normalized(q), do: if(q = Leads.blank(q), do: Contact.normalize(q))
 
   defp cursor(nil), do: {:ok, nil}
   defp cursor(""), do: {:ok, nil}

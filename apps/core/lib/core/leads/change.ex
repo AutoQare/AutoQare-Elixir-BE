@@ -126,7 +126,10 @@ defmodule Core.Leads.Change do
             now
           )
 
-        {[Notices.assigned(scope, moved, event)], "lead_updated"}
+        {[
+           Notices.assigned(scope, moved, event),
+           Notices.taken(scope, moved, lead.owner_user_id, event)
+         ], "lead_updated"}
       end)
     end)
   end

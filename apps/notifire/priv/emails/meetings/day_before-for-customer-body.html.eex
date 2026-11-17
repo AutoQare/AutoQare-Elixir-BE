@@ -1,0 +1,8 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph("It’s tomorrow. Good luck!") %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("See your meetings", @url) %>
+<%= link(@url) %>
+<%= if @no_login do %><%= paragraph("Ask your team for a portal invitation to see everything.") %><% end %>

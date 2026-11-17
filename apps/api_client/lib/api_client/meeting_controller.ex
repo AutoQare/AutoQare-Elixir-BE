@@ -1,7 +1,8 @@
 defmodule ApiClient.MeetingController do
   @moduledoc """
   The customer's meetings in the portal (AQ-06 §8.4, §11.2): `GET
-  /meetings` (their own, upcoming first; `from`/`to` for a window) and
+  /meetings?$where` (their own, upcoming first; `Data.Filters.Meetings`'
+  `starts_at` for a window) and
   `GET /meetings/:id/ics` (*Add to calendar*). The scope is pinned to the
   customer; `Core.Meetings` cuts what they read.
   """

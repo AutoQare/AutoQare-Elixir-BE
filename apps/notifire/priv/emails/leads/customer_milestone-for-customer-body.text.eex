@@ -1,0 +1,15 @@
+Hi <%= @first_name || "there" %>,
+
+<%= @title %>
+
+Good news: your search moved forward.
+<%= if @body do %>
+
+<%= @body %>
+<% end %>
+
+<%= facts_text(@facts) %>
+<%= if @url do %>See your application: <%= @url %><% end %>
+<%= if @no_login do %>
+Ask your team for a portal invitation to see everything.
+<% end %>

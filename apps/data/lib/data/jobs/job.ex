@@ -6,6 +6,10 @@ defmodule Data.Jobs.Job do
   `PATCH /jobs`), `close_changeset/2` and `archive_changeset/3` are the
   verbs', `fill_changeset/2` a merge's. Who may do which is `Core.Access`'s;
   the CHECKs in the migration hold the shape.
+
+  AQ-12 §11.4: `origin_kind` (a Fiverr brief, inquiry or order; an alert
+  email) and `origin_profile_id` (whose alert) are identity too, set at
+  creation. A Fiverr job may have no `source_url`.
   """
 
   use Data.Schema
@@ -19,6 +23,7 @@ defmodule Data.Jobs.Job do
 
   @sources Vocabulary.job_sources() |> Enum.map(&String.to_atom/1)
   @origins Vocabulary.job_origins() |> Enum.map(&String.to_atom/1)
+  @origin_kinds Vocabulary.job_origin_kinds() |> Enum.map(&String.to_atom/1)
   @seniorities Vocabulary.seniorities() |> Enum.map(&String.to_atom/1)
   @workplaces Vocabulary.workplace_types() |> Enum.map(&String.to_atom/1)
   @remote_scopes Vocabulary.remote_scopes() |> Enum.map(&String.to_atom/1)
@@ -32,8 +37,8 @@ defmodule Data.Jobs.Job do
   @statuses Vocabulary.job_statuses() |> Enum.map(&String.to_atom/1)
   @close_reasons Vocabulary.job_close_reasons() |> Enum.map(&String.to_atom/1)
 
-  @identity ~w(organisation_id team_id source source_url canonical_key source_job_id origin first_seen_at
-               last_seen_at created_by_user_id)a
+  @identity ~w(organisation_id team_id source source_url canonical_key source_job_id origin
+               origin_kind origin_profile_id first_seen_at last_seen_at created_by_user_id)a
 
   # Everything a person sets: the link, the key, the status and the
   # lifecycle columns are the verbs'; `description_html` is a capture's (P5).
@@ -53,6 +58,7 @@ defmodule Data.Jobs.Job do
     field(:canonical_key, :string)
     field(:source_job_id, :string)
     field(:origin, Ecto.Enum, values: @origins, default: :manual)
+    field(:origin_kind, Ecto.Enum, values: @origin_kinds)
     field(:first_seen_at, :utc_datetime_usec)
     field(:last_seen_at, :utc_datetime_usec)
     field(:is_reposted, :boolean, default: false)
@@ -113,6 +119,7 @@ defmodule Data.Jobs.Job do
     belongs_to(:company, Company)
     belongs_to(:closed_by_user, User)
     belongs_to(:archived_by_user, User)
+    belongs_to(:origin_profile, Data.Customers.Profile)
 
     has_many(:job_skills, JobSkill)
     has_many(:snapshots, Snapshot, preload_order: [desc: :captured_at])
@@ -131,8 +138,11 @@ defmodule Data.Jobs.Job do
   def create_changeset(job, attrs) do
     job
     |> cast(attrs, @identity ++ [:last_activity_at, :description_html])
-    |> validate_required([:organisation_id, :team_id, :source, :source_url, :canonical_key])
+    |> validate_required([:organisation_id, :team_id, :source, :canonical_key])
     |> validate_required([:origin, :first_seen_at, :last_seen_at])
+    |> then(
+      &if(get_field(&1, :source) == :fiverr, do: &1, else: validate_required(&1, :source_url))
+    )
     |> unique_constraint([:team_id, :canonical_key],
       error_key: :url,
       message: "is already in the pool"
@@ -236,6 +246,8 @@ defmodule Data.Jobs.Job do
     |> check_constraint(:title, name: :title_present, message: "can't be blank")
     |> check_constraint(:source, name: :source_known)
     |> check_constraint(:origin, name: :origin_known)
+    |> check_constraint(:origin_kind, name: :origin_kind_known)
+    |> check_constraint(:source_url, name: :source_url_present, message: "can't be blank")
     |> check_constraint(:seniority, name: :seniority_known)
     |> check_constraint(:workplace, name: :workplace_known)
     |> check_constraint(:remote_scope, name: :remote_scope_known)

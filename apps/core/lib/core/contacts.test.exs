@@ -118,7 +118,9 @@ defmodule Core.ContactsTest do
 
     assert c.mei.company == %{id: c.juniper.id, name: "Juniper Edge"}
     assert c.mei.can == %{edit: true, merge: false}
-    assert Contacts.get(customer_scope_for(c.tanweer), c.mei.id) == {:error, :not_found}
+
+    assert Contacts.get(customer_scope_for(c.tanweer), c.mei.id, DateTime.utc_now()) ==
+             {:error, :not_found}
   end
 
   test "the list: by name, by keyset, searched by name or handle", c do
@@ -129,12 +131,22 @@ defmodule Core.ContactsTest do
     assert hd(items).leads_count == 0
 
     assert {:ok, %{items: [%{name: "Mei Chen"}]}} =
-             Contacts.list(c.fiza_scope, %{"q" => "juniperedge"})
+             Contacts.list(c.fiza_scope, %{"$where" => %{"q" => %{"$ILIKE" => "juniperedge"}}})
 
-    assert {:ok, %{items: [_, _, _]}} = Contacts.list(c.fiza_scope, %{"q" => "zed"})
+    assert {:ok, %{items: [_, _, _]}} =
+             Contacts.list(c.fiza_scope, %{"$where" => %{"q" => %{"$ILIKE" => "%zed%"}}})
+
+    assert {:ok, %{items: [%{name: "Mei Chen"}]}} =
+             Contacts.list(c.fiza_scope, %{"$where" => %{"company_id" => %{"$NOT_NULL" => true}}})
 
     assert {:error, {:invalid, %{"cursor" => _}}} =
              Contacts.list(c.fiza_scope, %{"cursor" => "nope"})
+
+    assert {:error, {:invalid_filter, %{"q" => _}}} =
+             Contacts.list(c.fiza_scope, %{"$where" => %{"q" => %{"$EQUAL" => "zed"}}})
+
+    assert {:error, {:invalid_filter, %{"name" => _}}} =
+             Contacts.list(c.fiza_scope, %{"$where" => %{"name" => "Zed 1"}})
   end
 
   test "merge: every link moves to the survivor; the merged row stays; a team lead's alone", c do

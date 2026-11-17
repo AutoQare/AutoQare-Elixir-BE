@@ -49,7 +49,11 @@ defmodule Api.World.Conversations do
 
   defp company(w, who, name) do
     w
-    |> Http.call(who, :get, "#{@team}/companies?q=#{URI.encode_www_form(name)}")
+    |> Http.call(
+      who,
+      :get,
+      "#{@team}/companies?" <> URI.encode_query(%{"$where[q][$ILIKE]" => name})
+    )
     |> Enum.find(&(&1["name"] == name))
     |> case do
       %{"id" => id} -> id

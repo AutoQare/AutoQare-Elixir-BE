@@ -56,41 +56,25 @@ defmodule Data.Contacts do
 
   @doc """
   A page of the organisation's live contacts (not merged), by name then id:
-  `q` (normalised; a name by substring or trigram, or a handle's value),
-  `company_id`, `after` (`{name_normalized, id}` of the last row shown),
-  `limit`. Reads `limit + 1`.
+  `where` is the list's `$where` (`Data.Filters.Contacts`: `q`,
+  `company_id`); `opts` `after` (`{name_normalized, id}` of the last row
+  shown) and `limit`. Reads `limit + 1`: `{:ok, contacts}`, or the 422
+  `invalid_filter` for a filter the list doesn't take.
   """
-  @spec list(binary(), keyword()) :: [Contact.t()]
-  def list(organisation_id, opts) do
+  @spec list(binary(), term(), keyword()) :: {:ok, [Contact.t()]} | {:error, term()}
+  def list(organisation_id, where, opts) do
     limit = Keyword.get(opts, :limit, 50)
 
-    from(c in Contact,
-      where: c.organisation_id == ^organisation_id and is_nil(c.merged_into_contact_id),
-      order_by: [asc: c.name_normalized, asc: c.id],
-      limit: ^(limit + 1)
-    )
-    |> search(opts[:q])
-    |> company(opts[:company_id])
-    |> after_row(opts[:after])
-    |> load_all()
+    base =
+      from(c in Contact,
+        where: c.organisation_id == ^organisation_id and is_nil(c.merged_into_contact_id),
+        order_by: [asc: c.name_normalized, asc: c.id],
+        limit: ^(limit + 1)
+      )
+
+    with {:ok, query} <- Data.Filters.where(base, Data.Filters.Contacts, where),
+         do: {:ok, query |> after_row(opts[:after]) |> load_all()}
   end
-
-  defp search(query, nil), do: query
-
-  defp search(query, qn) do
-    like = "%" <> Data.Companies.escape_like(qn) <> "%"
-    handle = from(h in Handle, where: like(h.value_normalized, ^like), select: h.contact_id)
-
-    where(
-      query,
-      [c],
-      like(c.name_normalized, ^like) or fragment("? % ?", c.name_normalized, ^qn) or
-        c.id in subquery(handle)
-    )
-  end
-
-  defp company(query, nil), do: query
-  defp company(query, id), do: where(query, [c], c.company_id == ^id)
 
   defp after_row(query, nil), do: query
 

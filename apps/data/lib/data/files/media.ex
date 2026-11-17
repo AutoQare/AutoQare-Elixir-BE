@@ -6,7 +6,7 @@ defmodule Data.Files.Media do
 
   use Data.Schema
 
-  @kinds ~w(photo document attachment eml)a
+  @kinds ~w(photo document attachment eml import)a
 
   @type t :: %__MODULE__{}
 

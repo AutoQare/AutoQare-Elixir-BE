@@ -105,7 +105,7 @@ source from it (`Utils.JobKey`). Each company has a `.example` website.
 
 ## How to get them
 
-All three need Postgres on 5432 and leave mCart alone.
+All three need Postgres on 5432 and leave tCart alone.
 
 **The standard set alone:**
 

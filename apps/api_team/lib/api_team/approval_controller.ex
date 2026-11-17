@@ -1,7 +1,7 @@
 defmodule ApiTeam.ApprovalController do
   @moduledoc """
   Approvals in the console (AQ-07 §11.1, §11.4): the page (`GET
-  /approvals?team_id&tab&kind&customer_id&state&due&cursor`), the nav's
+  /approvals?team_id&tab&$where&cursor`, `Data.Filters.Approvals`), the nav's
   count, a lead's approvals (a bare list), *Request approval…* (201), the
   sheet and its edit (a draft), the verbs (submit, decide, revise,
   withdraw, *Recorded as sent*: 200), the comments (201 to add, 204 to

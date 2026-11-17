@@ -8,7 +8,13 @@ defmodule Data.Repo.Migrations.CreateCompanies do
   `Data.Companies.Company`, as P1's `handle_normalized` is) carries the
   unique index, and a trigram index on it serves the picker and the similar
   check. The companies list, contacts and company merge are P6's.
+
+  **P10 (AQ-10 §6.3, QP10-7):** `time_zone` (an IANA name) with
+  `time_zone_source` ∈ `upwork · manual`: read from an Upwork client's
+  local time on a capture, or set by hand, which wins. Both or neither.
   """
+
+  @zone_sources ~w(upwork manual)
 
   def change do
     create table(:companies, primary_key: false) do
@@ -27,6 +33,8 @@ defmodule Data.Repo.Migrations.CreateCompanies do
       add(:industry, :string)
       add(:hq_country, :string)
       add(:notes_md, :text)
+      add(:time_zone, :text)
+      add(:time_zone_source, :text)
       add(:created_by_user_id, references(:users, type: :uuid, on_delete: :nilify_all))
 
       timestamps()
@@ -45,6 +53,18 @@ defmodule Data.Repo.Migrations.CreateCompanies do
     create(
       constraint(:companies, :hq_country_iso,
         check: "hq_country IS NULL OR hq_country ~ '^[A-Z]{2}$'"
+      )
+    )
+
+    create(
+      constraint(:companies, :time_zone_source_known,
+        check: "time_zone_source IS NULL OR time_zone_source IN (#{list(@zone_sources)})"
+      )
+    )
+
+    create(
+      constraint(:companies, :time_zone_with_source,
+        check: "(time_zone IS NULL) = (time_zone_source IS NULL)"
       )
     )
 
@@ -72,4 +92,6 @@ defmodule Data.Repo.Migrations.CreateCompanies do
       "DROP TRIGGER IF EXISTS touch_updated_at ON companies"
     )
   end
+
+  defp list(values), do: Enum.map_join(values, ",", &"'#{&1}'")
 end

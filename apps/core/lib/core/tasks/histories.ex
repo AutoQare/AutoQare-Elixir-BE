@@ -1,6 +1,6 @@
 defmodule Core.Tasks.Histories do
   @moduledoc """
-  A task's activity (AQ-02 §5.1, §6.4; mCart's): **one row per changed
+  A task's activity (AQ-02 §5.1, §6.4; tCart's): **one row per changed
   field**, the rows of one save sharing a `change_group_id`, **labels frozen
   at write** in the organisation's zone, so renaming a stage never rewrites
   what the log said. Written inside the verb's transaction (`write/5`).
@@ -88,7 +88,7 @@ defmodule Core.Tasks.Histories do
     line(field, from, to, from_label, to_label)
   end
 
-  # Body text is not diffed (mCart): a fingerprint satisfies the CHECK,
+  # Body text is not diffed (tCart): a fingerprint satisfies the CHECK,
   # and the line says *that* it changed.
   defp description(same, same), do: nil
 

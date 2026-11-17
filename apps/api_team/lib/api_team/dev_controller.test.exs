@@ -106,7 +106,9 @@ defmodule ApiTeam.DevControllerTest do
 
     assert Enum.map(swept["sweeps"], & &1["name"]) ==
              ~w(follow_up_scan warn_sweep archive_sweep purge_sweep meeting_reminders
-                approval_reminders approval_expiry)
+                approval_reminders approval_expiry observation_sweep alert_sweep weekly invitations
+                untouched triage_stale forwarding_silent purge_soon watch_ending system_checks
+                meeting_notices)
 
     # AQ-08 §11.4: the digest scan and, last, the delivery sweep.
     assert %{"digests" => digests, "delivery" => %{"sent" => _, "skipped" => _, "failed" => _}} =

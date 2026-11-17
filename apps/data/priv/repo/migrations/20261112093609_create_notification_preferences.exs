@@ -3,7 +3,7 @@ defmodule Data.Repo.Migrations.CreateNotificationPreferences do
 
   @moduledoc """
   A person's switches for one notification group (AQ-08 §5, §8, QP8-6;
-  mCart's shape with AutoQare's four channels): push, email, the extension
+  tCart's shape with AutoQare's four channels): push, email, the extension
   and the digest, each on unless turned off. **Off-only**: a switch off
   stops that channel for the group's kinds; on brings back the kinds'
   defaults. A row is written when a person first changes a switch for that

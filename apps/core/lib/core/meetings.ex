@@ -67,21 +67,23 @@ defmodule Core.Meetings do
   end
 
   @doc """
-  `GET /meetings?team_id&from&to` (the console: the team's, by
-  `peer_leads`) and the portal's `GET /meetings` (the customer's own).
-  Without `from`/`to`, every scheduled meeting not yet over, upcoming
-  first; with them, every meeting starting in the window (the week view).
+  `GET /meetings?team_id&$where` (the console: the team's, by
+  `peer_leads`) and the portal's `GET /meetings?$where` (the customer's
+  own). `$where` is `Data.Filters.Meetings`' (`starts_at`, `status`,
+  `upcoming`): with none of `upcoming`, `starts_at` and `status`, every
+  scheduled or proposed meeting not yet over, upcoming first; with `status`,
+  every meeting of that status; with `starts_at
+  {$GTE, $LT}`, every meeting starting in the window (the week view).
   """
   @spec list(Scope.t(), map(), DateTime.t()) :: {:ok, map()} | {:error, term()}
   def list(%Scope{} = scope, params, %DateTime{} = now) do
     params = Leads.stringify(params)
 
     with {:ok, narrow} <- narrow(scope, params),
-         {:ok, from} <- time(params["from"], "from"),
-         {:ok, to} <- time(params["to"], "to") do
+         {:ok, meetings} <-
+           Store.list(narrow, params["$where"], Data.Filters.context(scope, now: now)) do
       items =
-        (narrow ++ [from: from, to: to, now: now])
-        |> Store.list()
+        meetings
         |> Enum.filter(
           &(shown?(scope, &1) and Access.can?(scope, :read, {:meeting, subject(&1)}))
         )
@@ -189,7 +191,7 @@ defmodule Core.Meetings do
       :ok = Reminders.plan(m, now)
 
       with {:ok, _moved} <- move(scope, lead, stage, now) do
-        {:ok, m, [Notices.scheduled(scope, m), events(lead, m)]}
+        {:ok, m, [Notices.scheduled(scope, m), Notices.clash(scope, lead, m), events(lead, m)]}
       end
     end
   end
@@ -272,7 +274,10 @@ defmodule Core.Meetings do
       audit_change(scope, m, moved, now)
       :ok = Reminders.drop(m.id)
       :ok = Reminders.plan(moved, now)
-      {:ok, moved, [Notices.changed(scope, moved), events(m.lead, moved)]}
+      moved = Store.reload(moved)
+
+      {:ok, moved,
+       [Notices.changed(scope, moved), Notices.clash(scope, m.lead, moved), events(m.lead, moved)]}
     end
   end
 
@@ -386,9 +391,7 @@ defmodule Core.Meetings do
     end
   end
 
-  defp time(value, field, required \\ :optional)
   defp time(nil, field, :required), do: {:error, {:missing, [String.to_existing_atom(field)]}}
-  defp time(nil, _field, :optional), do: {:ok, nil}
   defp time("", field, required), do: time(nil, field, required)
 
   defp time(value, field, _required) when is_binary(value) do

@@ -36,6 +36,35 @@ defmodule ApiTeam.PeopleControllerTest do
     assert call(user_fixture(), :get, "/v1/people").status == 404
   end
 
+  test "GET /people takes $where: q, suspended, admin; anything else is a 422", %{
+    admin: admin,
+    lead: lead,
+    backend: backend
+  } do
+    assert [%{"user_id" => id}] = body(call(admin, :get, "/v1/people?$where[admin][$EQUAL]=true"))
+    assert id == admin.id
+
+    assert [%{"user_id" => ^id}] =
+             body(call(admin, :get, "/v1/people?$where[q][$ILIKE]=%25#{admin.email}%25"))
+
+    assert [%{"user_id" => lead_id}] =
+             body(
+               call(
+                 admin,
+                 :get,
+                 "/v1/people?team_id=#{backend.id}&$where[suspended][$EQUAL]=false"
+               )
+             )
+
+    assert lead_id == lead.id
+    assert body(call(admin, :get, "/v1/people?$where[suspended][$EQUAL]=true")) == []
+
+    refused = call(admin, :get, "/v1/people?$where[role][$EQUAL]=lead")
+    assert refused.status == 422
+    assert body(refused)["error"]["code"] == "invalid_filter"
+    assert Map.keys(body(refused)["error"]["details"]) == ["role"]
+  end
+
   test "POST /people/:id/suspend revokes the tokens; unsuspend lifts it", %{
     admin: admin,
     lead: lead

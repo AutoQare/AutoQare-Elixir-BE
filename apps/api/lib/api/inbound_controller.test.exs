@@ -5,7 +5,7 @@ defmodule Api.InboundControllerTest do
   `too_large` when the pair is right), Postmark's documented JSON landing
   once (its retry adds nothing), an unknown address answered 200 and
   logged, 503 `inbound_off` without a password, 429 per address; and the
-  dev route's action, `{outcome, message_id, conversation_id}`.
+  dev route's action, `{outcome, message_id, conversation_id, alert_jobs}`.
   """
 
   use Api.ConnCase, async: false
@@ -152,7 +152,8 @@ defmodule Api.InboundControllerTest do
     assert json_response(conn, 200) == %{
              "outcome" => "unknown_address",
              "message_id" => nil,
-             "conversation_id" => nil
+             "conversation_id" => nil,
+             "alert_jobs" => nil
            }
 
     assert [%{provider: :dev, outcome: :landed}, %{provider: :dev, outcome: :unknown_address}] =

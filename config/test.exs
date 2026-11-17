@@ -63,7 +63,11 @@ config :core, start_token_sweeper: false
 config :core, :storage,
   adapter: Core.Storage.Local,
   root: Path.join(System.tmp_dir!(), "autoqare-test-uploads"),
-  max_bytes: [photo: 5_000, document: 12_000, attachment: 12_000, eml: 12_000]
+  max_bytes: [photo: 5_000, document: 12_000, attachment: 12_000, eml: 12_000, import: 200_000]
+
+# Imports (AQ-12 §11.4): caps small enough that the too-large test does not
+# have to build 20,000 rows.
+config :core, :imports, max_rows: 60, max_bytes: 200_000, undo_days: 7
 
 # Google against the tests' own keys (`Core.Auth.GoogleTestKeys`); the
 # stand-in is tested by switching it on for one test.

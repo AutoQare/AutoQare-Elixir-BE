@@ -133,6 +133,26 @@ defmodule ApiTeam.ApprovalControllerTest do
            ] =
              row["waiting_on"]
 
+    asked = "/v1/approvals?team_id=#{c.backend.id}&tab=asked"
+
+    assert [%{"id" => ^id}] =
+             body(
+               call(
+                 c.fiza,
+                 :get,
+                 asked <> "&$where[state][$IN][]=pending&$where[state][$IN][]=draft"
+               )
+             )["items"]
+
+    assert body(call(c.fiza, :get, asked <> "&$where[state][$EQUAL]=approved"))["items"] == []
+    assert body(call(c.fiza, :get, asked <> "&$where[due][$EQUAL]=overdue"))["items"] == []
+
+    for bad <- ["&$where[title][$EQUAL]=Bid", "&$where[due][$EQUAL]=soon", "&$where[kind][$GT]=x"] do
+      refused = call(c.fiza, :get, asked <> bad)
+      assert refused.status == 422, bad
+      assert body(refused)["error"]["code"] == "invalid_filter"
+    end
+
     assert body(call(c.hira, :get, "/v1/approvals/count?team_id=#{c.backend.id}")) == %{
              "waiting_on_me" => 1
            }

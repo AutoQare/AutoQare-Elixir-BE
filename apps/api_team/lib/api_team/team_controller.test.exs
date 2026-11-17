@@ -136,4 +136,32 @@ defmodule ApiTeam.TeamControllerTest do
     assert refused.status == 403
     assert body(refused)["error"]["message"] =~ "needs a lead"
   end
+
+  # AQ-11 §7.4: a member's daily target.
+  @member ~w(daily_target display_name email joined_at left_at role target_today team_id user_id)
+
+  test "a member's daily target: listed with today's, set by the team lead, null for the profiles' sum",
+       %{lead: lead, member: member, backend: backend} do
+    [row | _rest] = body(call(member, :get, "/v1/teams/#{backend.id}/members"))
+    assert row |> Map.keys() |> Enum.sort() == @member
+
+    set = call(lead, :patch, "/v1/teams/#{backend.id}/members/#{member.id}", %{daily_target: 40})
+    assert set.status == 200
+    assert %{"daily_target" => 40, "user_id" => user_id} = body(set)
+    assert body(set) |> Map.keys() |> Enum.sort() == @member
+    assert user_id == member.id
+
+    cleared =
+      call(lead, :patch, "/v1/teams/#{backend.id}/members/#{member.id}", %{daily_target: nil})
+
+    assert %{"daily_target" => nil} = body(cleared)
+
+    assert call(lead, :patch, "/v1/teams/#{backend.id}/members/#{member.id}", %{daily_target: -1}).status ==
+             422
+
+    assert code(
+             call(member, :patch, "/v1/teams/#{backend.id}/members/#{lead.id}", %{daily_target: 9})
+           ) ==
+             "forbidden"
+  end
 end

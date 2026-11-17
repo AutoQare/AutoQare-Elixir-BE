@@ -35,11 +35,16 @@ defmodule Core.Leads.BoardTest do
     assert {:error, {:invalid, %{"pipeline" => _}}} =
              board(scope_for(c.fiza), c.backend, %{"view" => "expanded"})
 
-    assert {:error, {:invalid, %{"quiet" => _}}} =
-             board(scope_for(c.fiza), c.backend, %{"quiet" => "7"})
+    assert {:error, {:invalid_filter, %{"quiet" => _}}} =
+             board(scope_for(c.fiza), c.backend, %{"$where" => %{"quiet" => %{"$EQUAL" => "7"}}})
 
-    assert {:error, {:invalid, %{"source" => _}}} =
-             board(scope_for(c.fiza), c.backend, %{"source" => "myspace"})
+    assert {:error, {:invalid_filter, %{"source" => _}}} =
+             board(scope_for(c.fiza), c.backend, %{
+               "$where" => %{"source" => %{"$IN" => ["myspace"]}}
+             })
+
+    assert {:error, {:invalid_filter, %{"colour" => _}}} =
+             board(scope_for(c.fiza), c.backend, %{"$where" => %{"colour" => "red"}})
 
     assert {:ok, %{empty: "team"}} = board(scope_for(c.dawud), c.backend)
   end
@@ -114,32 +119,34 @@ defmodule Core.Leads.BoardTest do
     assert ids(column(f, "proposal_sent")) == [freelance.id]
   end
 
-  test "filters: mine, customer, profile, stage, source, q, quiet, archived", c do
+  test "$where: mine, customer, profile, stage, source, q, quiet, archived", c do
     fiza = scope_for(c.fiza)
     mine = lead_fixture(fiza, profile: c.golang, state: :in_progress, stage: "offer")
     qasims = lead_fixture(scope_for(c.qasim), profile: profile_fixture(c.naveed), state: :todo)
     archived = lead_fixture(fiza, profile: c.golang, archived: true)
     Repo.update!(Ecto.Changeset.change(qasims, last_activity_at: ~U[2026-09-01 09:00:00.000000Z]))
 
-    all = fn params ->
-      {:ok, b} = board(fiza, c.backend, params)
+    all = fn where ->
+      {:ok, b} = board(fiza, c.backend, %{"$where" => where})
       Enum.flat_map(b.columns, &ids/1)
     end
 
     assert Enum.sort(all.(%{})) == Enum.sort([mine.id, qasims.id])
-    assert all.(%{"owner" => "me"}) == [mine.id]
-    assert all.(%{"customer" => c.naveed.id}) == [qasims.id]
-    assert all.(%{"profile" => c.golang.id}) == [mine.id]
-    assert all.(%{"stage" => "offer"}) == [mine.id]
-    assert all.(%{"source" => "company_site"}) |> length() == 2
-    assert all.(%{"source" => "upwork"}) == []
-    assert all.(%{"quiet" => "30"}) == [qasims.id]
-    assert all.(%{"archived" => "true"}) == [archived.id]
-    assert all.(%{"q" => "no such title"}) == []
+    assert all.(%{"owner" => %{"$EQUAL" => "me"}}) == [mine.id]
+    assert all.(%{"customer" => %{"$EQUAL" => c.naveed.id}}) == [qasims.id]
+    assert all.(%{"profile" => %{"$IN" => [c.golang.id]}}) == [mine.id]
+    assert all.(%{"stage" => %{"$EQUAL" => "offer"}}) == [mine.id]
+    assert all.(%{"source" => %{"$IN" => ["company_site"]}}) |> length() == 2
+    assert all.(%{"source" => %{"$EQUAL" => "upwork"}}) == []
+    assert all.(%{"quiet" => %{"$EQUAL" => "30"}}) == [qasims.id]
+    assert all.(%{"archived" => %{"$EQUAL" => "true"}}) == [archived.id]
+    assert all.(%{"q" => %{"$ILIKE" => "no such title"}}) == []
 
-    {:ok, b} = board(scope_for(c.muaz), c.backend, %{"owner" => "me"})
+    {:ok, b} =
+      board(scope_for(c.muaz), c.backend, %{"$where" => %{"owner" => %{"$EQUAL" => "me"}}})
+
     assert b.empty == "mine"
-    {:ok, b} = board(fiza, c.backend, %{"q" => "zzz"})
+    {:ok, b} = board(fiza, c.backend, %{"$where" => %{"q" => %{"$ILIKE" => "zzz"}}})
     assert b.empty == nil
   end
 
@@ -204,7 +211,7 @@ defmodule Core.Leads.BoardTest do
       label = label_fixture(fiza, c.backend, name: "Referral")
       Data.Labels.put_for_lead(labelled.id, [label.id])
 
-      {:ok, b} = board(fiza, c.backend, %{"label" => label.id})
+      {:ok, b} = board(fiza, c.backend, %{"$where" => %{"label" => %{"$IN" => [label.id]}}})
       assert [card] = Enum.flat_map(b.columns, & &1.cards)
       assert card.id == labelled.id
       assert card.labels == [%{id: label.id, name: "Referral"}]

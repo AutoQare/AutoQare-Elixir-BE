@@ -19,6 +19,7 @@ defmodule Core.Customers.Channels do
   alias Core.Audit
   alias Core.Customers
   alias Core.Inbound
+  alias Core.Notifications.Profiles, as: ProfileNotices
   alias Data.Channels, as: Store
   alias Data.Customers.Channel
   alias Data.Scope
@@ -53,8 +54,14 @@ defmodule Core.Customers.Channels do
     with {:ok, customer} <- Customers.fetch(scope, :read, customer_id),
          :ok <- Access.why_not(scope, :create, {:channel, %{customer: customer}}) do
       attrs = params |> take() |> Map.put("customer_id", customer.id)
-      answer(scope, Customers.commit(fn -> insert(scope, attrs, now) end))
+
+      answer(scope, Customers.commit(fn -> created(scope, customer, attrs, now) end))
     end
+  end
+
+  defp created(scope, customer, attrs, now) do
+    with {:ok, channel} <- insert(scope, attrs, now),
+         do: {:ok, channel, told(scope, customer, channel, "added", now)}
   end
 
   defp insert(scope, attrs, now) do
@@ -68,8 +75,28 @@ defmodule Core.Customers.Channels do
   @spec update(Scope.t(), binary(), map()) :: {:ok, Channel.t()} | {:error, term()}
   def update(%Scope{} = scope, id, params) do
     with {:ok, channel} <- fetch(scope, :update, id) do
-      answer(scope, Customers.commit(fn -> write(scope, channel, take(params)) end))
+      answer(scope, Customers.commit(fn -> updated(scope, channel, take(params)) end))
     end
+  end
+
+  defp updated(scope, channel, attrs) do
+    with {:ok, updated} <- write(scope, channel, attrs),
+         do: {:ok, updated, told(scope, channel.customer, updated, "changed", Core.Clock.now())}
+  end
+
+  # AQ-10B §5.7 CP2: the customer's own channel changes tell the owners
+  # (staff changes to a channel tell nobody: not in §5's CP1).
+  defp told(scope, customer, channel, verb, now) do
+    if Scope.customer?(scope),
+      do:
+        ProfileNotices.changed(
+          scope,
+          customer,
+          nil,
+          "a channel (#{verb}): #{channel.label || channel.kind}",
+          now
+        ),
+      else: []
   end
 
   defp write(scope, channel, attrs) do

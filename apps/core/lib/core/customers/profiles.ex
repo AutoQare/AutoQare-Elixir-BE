@@ -16,6 +16,7 @@ defmodule Core.Customers.Profiles do
   alias Core.Access
   alias Core.Audit
   alias Core.Customers
+  alias Core.Notifications.Profiles, as: ProfileNotices
   alias Data.Channels
   alias Data.Customers.Profile
   alias Data.Profiles, as: Store
@@ -149,10 +150,22 @@ defmodule Core.Customers.Profiles do
   defp write(scope, action, id, attrs, store) do
     with {:ok, profile} <- fetch(scope, action, id) do
       Customers.commit(fn ->
-        record(scope, to_string(action), profile, store.(profile, attrs))
+        scope
+        |> record(to_string(action), profile, store.(profile, attrs))
+        |> told(scope, profile, "the profile #{quoted(profile.title)}")
       end)
     end
   end
+
+  # AQ-10B §5.7 CP1, CP2: staff tell the customer, the customer the owners.
+  defp told({:ok, updated}, scope, profile, what) do
+    {:ok, updated,
+     ProfileNotices.changed(scope, profile.customer, profile, what, Core.Clock.now())}
+  end
+
+  defp told(error, _scope, _profile, _what), do: error
+
+  defp quoted(title), do: "“" <> to_string(title) <> "”"
 
   # The audit row for a profile write, before → after, and the profile fresh.
   defp record(scope, action, profile, {:ok, updated}) do
@@ -195,10 +208,20 @@ defmodule Core.Customers.Profiles do
       store = fn -> Store.put_owners(profile, owners, since) end
 
       Customers.commit(fn ->
-        replace(scope, "owners_set", profile, before, %{"user_ids" => owners}, store)
+        scope
+        |> replace("owners_set", profile, before, %{"user_ids" => owners}, store)
+        |> owners_told(scope, profile, {before["user_ids"], owners}, now)
       end)
     end
   end
+
+  # AQ-10B §5.7 CP3: the new owners and the team's leads.
+  defp owners_told({:ok, updated}, scope, profile, {before, after_ids}, now) do
+    {:ok, updated,
+     ProfileNotices.owners_changed(scope, profile.customer, profile, before, after_ids, now)}
+  end
+
+  defp owners_told(error, _scope, _profile, _ids, _now), do: error
 
   # An owner is somebody in a team serving the customer (any team, for a
   # customer in none). Anyone else is `:not_found`: the caller may not know
@@ -247,7 +270,9 @@ defmodule Core.Customers.Profiles do
     store = fn -> Store.put_skills(profile, rows) end
 
     Customers.commit(fn ->
-      replace(scope, "skills_set", profile, before, %{"skills" => rows}, store)
+      scope
+      |> replace("skills_set", profile, before, %{"skills" => rows}, store)
+      |> told(scope, profile, "the skills of #{quoted(profile.title)}")
     end)
   end
 
@@ -271,7 +296,9 @@ defmodule Core.Customers.Profiles do
       store = fn -> Store.put_channels(profile, ids) end
 
       Customers.commit(fn ->
-        replace(scope, "channels_set", profile, before, %{"channel_ids" => ids}, store)
+        scope
+        |> replace("channels_set", profile, before, %{"channel_ids" => ids}, store)
+        |> told(scope, profile, "the channels of #{quoted(profile.title)}")
       end)
     end
   end

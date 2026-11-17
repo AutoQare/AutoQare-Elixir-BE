@@ -70,7 +70,7 @@ defmodule Core.Extension.HealthTest do
     assert {:error, {:invalid, %{"misses" => _}}} = report(c.s_fiza, [miss(%{"count" => 1001})])
 
     assert {:error, {:invalid, %{"misses" => _}}} =
-             report(c.s_fiza, [miss(%{"site" => "indeed"})])
+             report(c.s_fiza, [miss(%{"site" => "monster"})])
 
     assert {:error, {:invalid, %{"misses" => _}}} =
              report(c.s_fiza, [miss(%{"page_kind" => "feed"})])
@@ -88,8 +88,12 @@ defmodule Core.Extension.HealthTest do
     :ok = report(c.s_fiza, [miss()], DateTime.add(@now, -8 * 86_400, :second))
     :ok = report(c.s_fiza, [miss(%{"selector_key" => "title", "count" => 14})])
 
-    assert {:ok, %{sites: [linkedin, upwork], devices: [%{id: id}]}} =
+    assert {:ok, %{sites: [linkedin, upwork | new_sites], devices: [%{id: id}]}} =
              Health.page(c.s_dawud, @now)
+
+    # AQ-12: Indeed, YC and Wellfound, each with its reference v1.
+    assert Enum.map(new_sites, & &1.site) == [:indeed, :yc_waas, :wellfound]
+    assert Enum.all?(new_sites, &(&1.config.version >= 1 and &1.misses == []))
 
     assert id == device.id
 

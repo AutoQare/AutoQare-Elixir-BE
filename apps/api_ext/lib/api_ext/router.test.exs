@@ -56,7 +56,11 @@ defmodule ApiExt.RouterTest do
           post: "/v1/leads/save",
           post: "/v1/leads/applied",
           post: "/v1/leads/x/apply-again",
-          post: "/v1/health"
+          post: "/v1/health",
+          get: "/v1/behaviour",
+          post: "/v1/observations",
+          post: "/v1/watches",
+          delete: "/v1/watches/w"
         ] do
       conn = call(nil, method, path)
       assert conn.status == 401, "#{method} #{path} answered #{conn.status}"

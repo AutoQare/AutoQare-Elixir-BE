@@ -5,6 +5,7 @@ defmodule Data.VocabularyTest do
 
   use ExUnit.Case, async: true
 
+  alias Data.Seeds.Notifications, as: NotificationSeed
   alias Data.Vocabulary
 
   doctest Vocabulary
@@ -121,7 +122,7 @@ defmodule Data.VocabularyTest do
     assert Vocabulary.lead_priorities() == ~w(low high urgent)
     assert Vocabulary.bid_periods() == ~w(hour project)
     assert Vocabulary.lead_archive_reasons() == ~w(by_hand inactive)
-    assert Vocabulary.event_actors() == ~w(user customer extension email system)
+    assert Vocabulary.event_actors() == ~w(user customer extension email system import)
     assert Vocabulary.event_visibilities() == ~w(staff customer)
   end
 
@@ -138,14 +139,17 @@ defmodule Data.VocabularyTest do
 
   # AQ-05 §11.4, word for word and in order, in all three repos.
   test "P5's lists (AQ-05 §5.5), in their order" do
-    assert Vocabulary.ext_sites() == ~w(linkedin upwork)
+    assert Vocabulary.ext_sites() == ~w(linkedin upwork indeed yc_waas wellfound)
+    assert Vocabulary.ext_save_only_sites() == ~w(yc_waas wellfound)
     assert Vocabulary.ext_page_kinds() == ~w(job search proposal confirmation thread other)
   end
 
   # AQ-06 §11.6, word for word and in order, in all three repos.
   test "P6's lists (AQ-06 §11.6), in their order" do
     assert Vocabulary.contact_sources() == ~w(manual email extension import)
-    assert Vocabulary.contact_handle_kinds() == ~w(email linkedin upwork phone other)
+
+    assert Vocabulary.contact_handle_kinds() ==
+             ~w(email linkedin upwork phone indeed fiverr other)
 
     assert Vocabulary.contact_roles() ==
              ~w(recruiter hiring_manager interviewer client referrer other)
@@ -197,10 +201,23 @@ defmodule Data.VocabularyTest do
   test "P8's lists (AQ-08 §11.4), in their order" do
     assert Vocabulary.delivery_channels() == ~w(push email extension)
     assert Vocabulary.delivery_states() == ~w(pending sent skipped failed)
-    assert Vocabulary.delivery_skip_reasons() == ~w(read no_target preference_off)
+    assert Vocabulary.delivery_skip_reasons() == ~w(read no_target preference_off folded)
     assert Vocabulary.push_apps() == ~w(team client)
     assert Vocabulary.notification_channels() == ~w(inapp push email extension digest)
     assert Vocabulary.delivery_channels() -- Vocabulary.notification_channels() == []
+  end
+
+  # AQ-10B §11.4, word for word and in order, in every repo.
+  test "P10b's lists (AQ-10B §11.4), in their order" do
+    assert Vocabulary.notification_groups() ==
+             ~w(tasks leads conversations meetings approvals profiles behaviour system account)
+
+    assert Vocabulary.digest_frequencies() == ~w(daily weekly off)
+    assert Vocabulary.snooze_choices() == ~w(hour tomorrow monday)
+    assert Vocabulary.customer_mail_states() == ~w(pending sent failed skipped)
+
+    assert Enum.map(NotificationSeed.groups(), & &1.key) ==
+             Vocabulary.notification_groups()
   end
 
   test "team roles are organisation roles" do
@@ -211,5 +228,31 @@ defmodule Data.VocabularyTest do
     assert Vocabulary.custom_stage?("custom.portfolio_review")
     refute Vocabulary.custom_stage?("custom.")
     refute Vocabulary.custom_stage?("offer")
+  end
+
+  # AQ-10 §11.4, word for word and in order, in both repos and the extension's copy.
+  test "P10's lists (AQ-10 §11.4), in their order" do
+    assert Vocabulary.observation_kinds() ==
+             ~w(seen_online last_active_reported job_posted job_reposted replied viewed_proposal
+                viewed_profile message_read)
+
+    assert Vocabulary.observation_sources() == ~w(extension job email manual)
+    assert Vocabulary.hour_groups() == ~w(active posted replied)
+    assert Vocabulary.watch_triggers() == ~w(comes_online posts_job replies any_activity)
+    assert Vocabulary.time_zone_sources() == ~w(upwork manual)
+    assert Vocabulary.watch_cooldowns() == [30, 120, 1440]
+    assert Vocabulary.watch_expiries() == ~w(none week month)
+  end
+
+  # AQ-12 §11.4, word for word and in order, in all three repos.
+  test "P12's lists (AQ-12 §11.4), in their order" do
+    assert Vocabulary.job_origin_kinds() == ~w(brief inquiry order alert)
+    assert Vocabulary.import_kinds() == ~w(applications jobs contacts)
+
+    assert Vocabulary.import_states() ==
+             ~w(reading mapping checking ready importing imported undoing undone failed)
+
+    assert Vocabulary.import_row_results() == ~w(new update duplicate error skipped)
+    assert Vocabulary.date_orders() == ~w(day_month month_day)
   end
 end

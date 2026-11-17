@@ -29,7 +29,11 @@ defmodule Data.Repo.Migrations.CreateExtensionMisses do
       add(:last_seen_at, :timestamptz, null: false)
     end
 
-    create(constraint(:extension_misses, :site_known, check: "site IN ('linkedin','upwork')"))
+    create(
+      constraint(:extension_misses, :site_known,
+        check: "site IN ('linkedin','upwork','indeed','yc_waas','wellfound')"
+      )
+    )
 
     create(
       constraint(:extension_misses, :page_kind_known,

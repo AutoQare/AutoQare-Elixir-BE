@@ -94,18 +94,25 @@ defmodule Data.NotificationsTest do
     rows = for n <- 1..3, do: notification_fixture(org, user, dedupe_key: "k#{n}")
     other = notification_fixture(org, user_fixture())
 
-    assert {[a, b], true} = Notifications.page(user.id, limit: 2)
-    assert {[c], false} = Notifications.page(user.id, limit: 2, after: {b.inserted_at, b.id})
+    assert {:ok, {[a, b], true}} = Notifications.page(user.id, nil, limit: 2)
+
+    assert {:ok, {[c], false}} =
+             Notifications.page(user.id, %{}, limit: 2, after: {b.inserted_at, b.id})
+
     assert Enum.sort(Enum.map([a, b, c], & &1.id)) == Enum.sort(Enum.map(rows, & &1.id))
 
     now = DateTime.utc_now()
     assert Notifications.mark_read(user.id, other.id, now) == nil
     assert %{read_at: %DateTime{}} = Notifications.mark_read(user.id, a.id, now)
     assert Notifications.unread_count(user.id) == 2
-    assert {[_one, _two], false} = Notifications.page(user.id, unread: true)
+    unread = %{"unread" => %{"$EQUAL" => true}}
+    assert {:ok, {[_one, _two], false}} = Notifications.page(user.id, unread)
     assert Notifications.mark_all_read(user.id, now) == 2
     assert Notifications.unread_count(user.id) == 0
     assert [%{key: "tasks"}] = Notifications.groups_with_rows(user.id)
-    assert {[], false} = Notifications.page(user.id, group: "leads")
+    assert {:ok, {[], false}} = Notifications.page(user.id, %{"group" => %{"$EQUAL" => "leads"}})
+
+    assert {:ok, {[_, _, _], false}} =
+             Notifications.page(user.id, %{"group" => %{"$IN" => ["tasks"]}})
   end
 end

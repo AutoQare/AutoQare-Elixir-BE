@@ -1,6 +1,6 @@
 defmodule Core.Notifications.Push do
   @moduledoc """
-  Push on a browser (AQ-08 §7.6, §11.4, QP8-14; mCart's
+  Push on a browser (AQ-08 §7.6, §11.4, QP8-14; tCart's
   `ApiShared.PushController`), **each person their own**: the server's
   public key and the person's browsers, a browser turned on or taken off,
   and *Send a test*. The push itself goes out from `notifire`'s sweep.

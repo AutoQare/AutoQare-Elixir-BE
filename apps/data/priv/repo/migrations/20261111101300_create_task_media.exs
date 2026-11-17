@@ -2,7 +2,7 @@ defmodule Data.Repo.Migrations.CreateTaskMedia do
   use Ecto.Migration
 
   @moduledoc """
-  A task's files (AQ-02 §5.1; mCart's): `media` rows of kind
+  A task's files (AQ-02 §5.1; tCart's): `media` rows of kind
   `attachment`, put on the task after the three-step upload, in order, with
   who added each — staff and the customer both add files.
   """

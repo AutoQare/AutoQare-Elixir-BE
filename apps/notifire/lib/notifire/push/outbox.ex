@@ -1,6 +1,6 @@
 defmodule Notifire.Push.Outbox do
   @moduledoc """
-  The dev push outbox (AQ-08 §7.6, QP8-16; AutoQare's, not mCart's): every
+  The dev push outbox (AQ-08 §7.6, QP8-16; AutoQare's, not tCart's): every
   push `Notifire.Push` sends to a browser is kept here, newest first, the
   way Swoosh's local adapter keeps the dev mailbox, so every check can be
   read by script at `GET /dev/push/json` and emptied by `DELETE`.

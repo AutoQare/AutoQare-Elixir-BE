@@ -2,7 +2,7 @@ defmodule Data.Repo.Migrations.CreateTaskStages do
   use Ecto.Migration
 
   @moduledoc """
-  A person's own In progress stages (AQ-02 §5.1, QP2-10; mCart's D45):
+  A person's own In progress stages (AQ-02 §5.1, QP2-10; tCart's D45):
   *Sourcing*, *Waiting on the customer*. A task In progress may carry one of
   its primary assignee's stages; nobody has to. Removing a stage clears it
   from the tasks that used it (`tasks.stage_id` nilifies) and nothing else.

@@ -37,6 +37,23 @@ defmodule Data.Inbound do
     end
   end
 
+  @doc """
+  Whether the same job alert (its `Message-ID`) was read already in the
+  organisation (AQ-12 §7): the same mail by another route is a duplicate.
+  """
+  @spec alert_read?(binary(), String.t() | nil) :: boolean()
+  def alert_read?(_organisation_id, nil), do: false
+
+  def alert_read?(organisation_id, rfc_message_id) do
+    Repo.exists?(
+      from(i in InboundMessage,
+        where:
+          i.organisation_id == ^organisation_id and i.rfc_message_id == ^rfc_message_id and
+            not is_nil(i.alert_jobs)
+      )
+    )
+  end
+
   @doc "A channel's deliveries, newest first (at most `limit`)."
   @spec for_channel(binary(), pos_integer()) :: [InboundMessage.t()]
   def for_channel(channel_id, limit \\ 50) do

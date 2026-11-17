@@ -1,6 +1,6 @@
 defmodule Core.Tasks.Stages do
   @moduledoc """
-  A person's own In progress stages (AQ-02 §7.2, QP2-10; mCart's D45):
+  A person's own In progress stages (AQ-02 §7.2, QP2-10; tCart's D45):
   each person their own, and nobody else's. Four suggestions live in code
   (§11): *Sourcing · Preparing · Waiting on the customer · Waiting on the
   recruiter*; `suggested` lists the ones not yet added. Removing a stage

@@ -110,9 +110,23 @@ defmodule Core.Tasks.Portal do
     attrs = params |> Tasks.stringify() |> Map.take(~w(title description))
 
     with {:ok, task} <- Tasks.fetch(scope, :edit_own, id) do
-      Tasks.answer(scope, Write.commit(fn -> Tasks.save(scope, task, attrs, now) end), now)
+      fn -> scope |> Tasks.save(task, attrs, now) |> edit_told(scope, task, now) end
+      |> Write.commit()
+      |> then(&Tasks.answer(scope, &1, now))
     end
   end
+
+  # AQ-10B §5.2 T11: the customer edited their task.
+  defp edit_told({:ok, updated, events}, scope, task, now) do
+    if updated.title != task.title or updated.description != task.description do
+      key = "edit:#{DateTime.to_unix(now, :microsecond)}"
+      {:ok, updated, [events, Notices.customer_changed(scope, updated, :edited, key)]}
+    else
+      {:ok, updated, events}
+    end
+  end
+
+  defp edit_told(error, _scope, _task, _now), do: error
 
   # ── §9 ──────────────────────────────────────────────────────────────────────
 

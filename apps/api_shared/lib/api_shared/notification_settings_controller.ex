@@ -1,9 +1,10 @@
 defmodule ApiShared.NotificationSettingsController do
   @moduledoc """
-  Notifications › Settings (AQ-08 §8, §11.4), served by both apps: the
-  switches per group and channel with quiet hours, the digest, the zone and
-  what the person has. `Core.Notifications.Settings` decides; quiet hours
-  and the digest are still saved through `PUT /me/settings`.
+  Notifications › Settings (AQ-08 §8, §11.4; AQ-10B §11.4), served by both
+  apps: the switches per group and channel with each group's kinds folded
+  under it, snooze, quiet hours, the digest, the zone and what the person
+  has. `Core.Notifications.Settings` decides; quiet hours and the digest's
+  time and frequency are still saved through `PUT /me/settings`.
 
   `has.push` is about this app's browsers: the surface's (`team` on
   `/team/v1`, `client` on `/client/v1`), never the body's.
@@ -27,6 +28,27 @@ defmodule ApiShared.NotificationSettingsController do
 
     with {:ok, settings} <-
            Settings.put_group(conn.assigns.scope, key, switches, app(conn), Clock.now()),
+         do: json(conn, settings)
+  end
+
+  @doc "`PUT /notifications/settings/kinds/:key` `{push?, email?, extension?, digest?}`: **settings**."
+  def put_kind(conn, %{"key" => key} = params) do
+    switches = Map.take(params, ~w(push email extension digest))
+
+    with {:ok, settings} <-
+           Settings.put_kind(conn.assigns.scope, key, switches, app(conn), Clock.now()),
+         do: json(conn, settings)
+  end
+
+  @doc ~s[`PUT /notifications/settings/snooze` `{for: "hour" | "tomorrow" | "monday" | null}`: **settings**.]
+  def put_snooze(conn, params) do
+    with {:ok, settings} <-
+           Settings.put_snooze(
+             conn.assigns.scope,
+             Map.take(params, ["for"]),
+             app(conn),
+             Clock.now()
+           ),
          do: json(conn, settings)
   end
 

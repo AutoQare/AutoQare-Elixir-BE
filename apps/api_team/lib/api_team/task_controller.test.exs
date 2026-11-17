@@ -157,11 +157,22 @@ defmodule ApiTeam.TaskControllerTest do
     path = "/v1/tasks/#{task.id}"
 
     assert call(c.hira, :post, path <> "/archive").status == 200
-    assert body(call(c.hira, :get, "/v1/tasks/search?q=go")) == []
+    assert body(call(c.hira, :get, "/v1/tasks/search?$where[q][$ILIKE]=go")) == []
+
+    assert [%{"id" => archived}] =
+             body(
+               call(
+                 c.hira,
+                 :get,
+                 "/v1/tasks/search?$where[q][$ILIKE]=go&$where[archived][$EQUAL]=true"
+               )
+             )
+
+    assert archived == task.id
     assert call(c.hira, :post, path <> "/unarchive").status == 200
 
     assert [%{"id" => id, "title" => "Shortlist ten Go roles", "state" => "todo"}] =
-             body(call(c.hira, :get, "/v1/tasks/search?q=go"))
+             body(call(c.hira, :get, "/v1/tasks/search?$where[q][$ILIKE]=go"))
 
     assert id == task.id
 
@@ -199,7 +210,8 @@ defmodule ApiTeam.TaskControllerTest do
   test "GET /board in §7.6's shape: six columns as a list, counts by_state, the groups", c do
     task_fixture(scope_for(c.hira), team: c.backend, primary: c.fiza, state: :in_progress)
 
-    page = body(call(c.fiza, :get, "/v1/board?team_id=#{c.backend.id}&mine=true"))
+    page =
+      body(call(c.fiza, :get, "/v1/board?team_id=#{c.backend.id}&$where[mine][$EQUAL]=true"))
 
     assert Map.keys(page) |> Enum.sort() ==
              ~w(columns counts empty in_progress_groups people stages team teams)
@@ -234,9 +246,48 @@ defmodule ApiTeam.TaskControllerTest do
     board = "/v1/board?team_id=#{c.backend.id}"
     Data.Teams.put_settings(c.backend.id, %{peer_tasks: :hidden})
     assert body(call(c.muaz, :get, board))["empty"] == "team_hidden"
-    assert call(c.muaz, :get, board <> "&customer_id=#{c.imran.id}").status == 404
+    assert call(c.muaz, :get, board <> "&$where[customer_id][$EQUAL]=#{c.imran.id}").status == 404
     assert call(c.muaz, :get, board <> "&view=team").status == 422
     assert call(c.muaz, :get, "/v1/board").status == 422
     assert call(c.muaz, :get, "/v1/board?team_id=#{c.frontend.id}").status == 404
+  end
+
+  test "GET /board reads $where and $order as bracket parameters; anything else is 422 invalid_filter",
+       c do
+    hira = scope_for(c.hira)
+
+    urgent =
+      task_fixture(hira, team: c.backend, priority: :urgent, title: "Apply", primary: c.fiza)
+
+    low = task_fixture(hira, team: c.backend, priority: :low, title: "Call")
+    _plain = task_fixture(hira, team: c.backend, title: "Read")
+    board = "/v1/board?team_id=#{c.backend.id}"
+
+    todo = fn path ->
+      body(call(c.hira, :get, path))["columns"]
+      |> Enum.find(&(&1["state"] == "todo"))
+      |> Map.fetch!("items")
+      |> Enum.map(& &1["id"])
+    end
+
+    assert todo.(board <> "&$where[priority][$IN][]=urgent&$where[priority][$IN][]=low")
+           |> Enum.sort() == Enum.sort([urgent.id, low.id])
+
+    assert todo.(board <> "&$where[people][$IN][]=#{c.fiza.id}") == [urgent.id]
+    assert todo.(board <> "&$where[q][$ILIKE]=cal") == [low.id]
+    assert hd(todo.(board <> "&$order[priority]=$ASC")) == urgent.id
+    assert List.last(todo.(board <> "&$order[priority]=$ASC")) == low.id
+
+    for bad <- [
+          "&$where[colour][$EQUAL]=red",
+          "&$where[priority][$GT]=low",
+          "&$where[due][$EQUAL]=someday",
+          "&$order[title]=$ASC",
+          "&$order[due]=$DESC"
+        ] do
+      conn = call(c.hira, :get, board <> bad)
+      assert conn.status == 422, bad
+      assert body(conn)["error"]["code"] == "invalid_filter"
+    end
   end
 end

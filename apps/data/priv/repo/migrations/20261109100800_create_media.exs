@@ -6,7 +6,7 @@ defmodule Data.Repo.Migrations.CreateMedia do
   attached to is a link table per owner: `person_photos` (the next
   migration), `document_media` (P1.2).
 
-  The three-step upload (mCart's): `POST /media` reserves a row,
+  The three-step upload (tCart's): `POST /media` reserves a row,
   `PUT /media/:id/blob` stores and sniffs the bytes against the allowlist,
   `POST /media/:id/confirm` marks `uploaded_at`. `sha256` is null until the
   bytes arrive and is computed from them. Unconfirmed rows older than a day
@@ -37,7 +37,7 @@ defmodule Data.Repo.Migrations.CreateMedia do
 
     create(
       constraint(:media, :media_kind_known,
-        check: "media_kind IN ('photo','document','attachment','eml')"
+        check: "media_kind IN ('photo','document','attachment','eml','import')"
       )
     )
 

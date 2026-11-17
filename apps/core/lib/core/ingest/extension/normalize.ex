@@ -6,7 +6,7 @@ defmodule Core.Ingest.Extension.Normalize do
 
   | Raw | Becomes |
   |---|---|
-  | `title`, `company_name`, `company_url` | the title; the company by name (a `linkedin.com/company/…` link is its `linkedin_url`, any other its `website_url`) |
+  | `title`, `company_name`, `company_url` | the title; the company by name (a `linkedin.com/company/…` link is its `linkedin_url`, a board's own company page nothing, any other its `website_url`) |
   | `workplace_text`, `location_text` | `workplace`; `onsite_locations` on site or hybrid; remote: `remote_scope` with `allowed_countries` or `allowed_regions` ("Remote (US)" → `country_list`, `US`) |
   | `employment_text`; Upwork's rate or budget | `engagement` ("Volunteer" → `other`; Upwork → `freelance_hourly` / `freelance_fixed`) |
   | `seniority_text`; `upwork.experience_text` | LinkedIn's `seniority`; Upwork's `experience_level` on its details |
@@ -19,15 +19,21 @@ defmodule Core.Ingest.Extension.Normalize do
   | Upwork's client lines; LinkedIn's applicants and flags | the platform details (`Core.Ingest.Extension.Facts`) |
   | `bid_text`, `connects_spent_text` | the application's bid and Connects |
   | **all of them, as sent** | the snapshot's body: canonical JSON without `captured_at` |
+  | `upwork.client.local_time_text`, `location_text` | AQ-10 §6.3: the company's `time_zone` (`Core.Behaviour.Zone`) |
+  | Indeed's, YC's and Wellfound's own members | AQ-12 §11.4: `Core.Ingest.Extension.Sites` — Indeed's pay as `platform_estimate`, its work setting (the description wins), YC's and Wellfound's salary, equity and visa, each site's details |
+
+  The site is the link's source (`Core.Ingest.Extension.Pool.site/1`): a
+  link off the extension's sites reads as `:other`, shared fields only.
 
   AQ-05 §11.4's vectors are `Core.Ingest.Extension.NormalizeTest`, one
   test each. A text nobody can read becomes nothing, never a guess.
   """
 
-  alias Core.Ingest.Extension.{Facts, Money, Read}
+  alias Core.Behaviour.Zone
+  alias Core.Ingest.Extension.{Facts, Money, Read, Sites}
 
   @type opts :: %{
-          required(:site) => :linkedin | :upwork,
+          required(:site) => :linkedin | :upwork | :indeed | :yc_waas | :wellfound | :other,
           required(:now) => DateTime.t(),
           required(:zone) => String.t(),
           optional(:skills) => [%{id: binary(), name: String.t()}]
@@ -98,7 +104,7 @@ defmodule Core.Ingest.Extension.Normalize do
   @doc """
   A capture's `fields` (§11.3, string keys, every member possibly `nil`)
   as `%{job, company, description_html, details, signal, skills,
-  unmatched_skills, bid, connects_spent, snapshot}`:
+  unmatched_skills, bid, connects_spent, snapshot, time_zone}`:
 
   - `job` — the job body `Core.Jobs` takes (string keys, P3's columns),
     only what was read;
@@ -112,7 +118,7 @@ defmodule Core.Ingest.Extension.Normalize do
     upwork = Read.sub(fields, "upwork")
     {skills, unmatched} = skills(fields["skills_text"], Map.get(opts, :skills, []))
     {html, plain} = description(fields["description_html"])
-    engagement = engagement(Read.text(fields, "employment_text"), upwork, site)
+    engagement = engagement(Sites.employment_text(site, fields), upwork, site)
     method = apply_method(Read.text(fields, "apply_kind"), site)
 
     %{
@@ -131,9 +137,23 @@ defmodule Core.Ingest.Extension.Normalize do
       unmatched_skills: unmatched,
       bid: Money.bid(Read.text(fields, "bid_text")),
       connects_spent: connects(Read.text(fields, "connects_spent_text")),
-      snapshot: %{body: snapshot_body(fields), captured_at: captured_at(fields, opts.now)}
+      snapshot: %{body: snapshot_body(fields), captured_at: captured_at(fields, opts.now)},
+      time_zone: time_zone(upwork, site, captured_at(fields, opts.now))
     }
   end
+
+  # AQ-10 §6.3: the Upwork client's local time, as a zone.
+  defp time_zone(upwork, :upwork, at) do
+    client = Read.sub(upwork, "client")
+
+    Zone.from_local_time(
+      Read.text(client, "local_time_text"),
+      Read.text(client, "location_text"),
+      at
+    )
+  end
+
+  defp time_zone(_upwork, _site, _at), do: nil
 
   defp job(fields, upwork, site, opts, read) do
     %{
@@ -147,9 +167,14 @@ defmodule Core.Ingest.Extension.Normalize do
       "skills" => Enum.map(read.skills, &%{"skill_id" => &1})
     }
     |> Map.merge(
-      place(Read.text(fields, "workplace_text"), Read.text(fields, "location_text"), site)
+      place(
+        Sites.workplace_text(site, fields, read.plain),
+        Sites.location_text(site, Read.text(fields, "location_text")),
+        site
+      )
     )
     |> Map.merge(money(fields, upwork, site, read.engagement))
+    |> Map.merge(Sites.columns(site, fields))
     |> Map.merge(posted(Read.text(fields, "posted_text"), opts))
     |> Map.merge(hours(Read.text(upwork, "hours_text")))
     |> Enum.reject(fn {_k, v} -> v in [nil, false, []] end)
@@ -170,7 +195,10 @@ defmodule Core.Ingest.Extension.Normalize do
       url =~ ~r{^https?://([a-z]+\.)?linkedin\.com/company/}i ->
         %{"name" => name, "linkedin_url" => url}
 
-      url =~ ~r{linkedin\.com|upwork\.com}i ->
+      # A board's own company page is no company website (AQ-12: Indeed's
+      # `/cmp/…`, YC's and Wellfound's company pages too).
+      url =~
+          ~r{linkedin\.com|upwork\.com|indeed\.com|workatastartup\.com|ycombinator\.com|wellfound\.com}i ->
         %{"name" => name}
 
       true ->
@@ -306,6 +334,9 @@ defmodule Core.Ingest.Extension.Normalize do
 
     Money.comp(said, if(hourly?, do: "hour", else: "project"), "employer")
   end
+
+  defp money(fields, _upwork, site, _engagement) when site in [:indeed, :yc_waas, :wellfound],
+    do: Sites.money(site, fields)
 
   defp money(fields, _upwork, _site, _engagement) do
     case Money.salary(Read.text(fields, "salary_text")) do

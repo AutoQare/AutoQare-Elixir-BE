@@ -60,14 +60,23 @@ defmodule ApiTeam.InvitationControllerTest do
 
     assert call(admin, :post, "/v1/invitations", %{params | email: "nope"}).status == 422
 
-    conn = call(admin, :get, "/v1/invitations?state=open")
+    conn = call(admin, :get, "/v1/invitations?$where[state][$EQUAL]=open")
     assert conn.status == 200
     assert Enum.any?(body(conn), &(&1["id"] == id)) and length(body(conn)) == 2
     assert call(member, :get, "/v1/invitations").status == 403
+    assert body(call(admin, :get, "/v1/invitations?$where[state][$EQUAL]=past")) == []
 
     assert body(call(admin, :post, "/v1/invitations/#{id}/resend"))["state"] == "open"
     conn = call(admin, :post, "/v1/invitations/#{id}/revoke")
     assert body(conn)["state"] == "revoked"
+
+    assert [%{"id" => ^id}] =
+             body(call(admin, :get, "/v1/invitations?$where[state][$EQUAL]=past"))
+
+    assert length(body(call(admin, :get, "/v1/invitations?$where[state][$EQUAL]=open"))) == 1
+
+    refused = call(admin, :get, "/v1/invitations?$where[state][$EQUAL]=later")
+    assert refused.status == 422 and body(refused)["error"]["code"] == "invalid_filter"
     assert call(admin, :post, "/v1/invitations/#{id}/revoke").status == 404
     assert call(admin, :post, "/v1/invitations/#{Ecto.UUID.generate()}/revoke").status == 404
   end

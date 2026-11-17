@@ -310,7 +310,7 @@ defmodule Core.Approvals.EffectsTest do
     assert page.(scope_for(c.hira), %{
              "team_id" => c.backend.id,
              "tab" => "all",
-             "kind" => "cv_for_job"
+             "$where" => %{"kind" => %{"$EQUAL" => "cv_for_job"}}
            }) == [cv.id]
 
     assert Approvals.list(c.fiza_s, %{"team_id" => c.backend.id, "tab" => "all"}, @now) ==

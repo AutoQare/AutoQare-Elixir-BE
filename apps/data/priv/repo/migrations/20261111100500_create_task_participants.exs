@@ -2,7 +2,7 @@ defmodule Data.Repo.Migrations.CreateTaskParticipants do
   use Ecto.Migration
 
   @moduledoc """
-  The staff a task concerns (AQ-02 §5.1; mCart's): who is doing it
+  The staff a task concerns (AQ-02 §5.1; tCart's): who is doing it
   (`level` primary or secondary), who only wants to be told (`is_watcher`),
   and who asked not to be (`is_muted`), in one row per person. A watcher is
   not given work: `level IS NULL` keeps them off their own board (QP2-16).

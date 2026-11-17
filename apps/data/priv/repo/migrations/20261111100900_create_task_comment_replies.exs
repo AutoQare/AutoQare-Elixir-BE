@@ -2,10 +2,10 @@ defmodule Data.Repo.Migrations.CreateTaskCommentReplies do
   use Ecto.Migration
 
   @moduledoc """
-  Answers to a comment (AQ-02 §5.1; mCart's). **This table is the
+  Answers to a comment (AQ-02 §5.1; tCart's). **This table is the
   one-level rule**: a reply points at a comment, and nothing points at a
   reply. `task_id` is carried for the one-read notification set, as in
-  mCart; it cannot drift, because a comment never moves between tasks.
+  tCart; it cannot drift, because a comment never moves between tasks.
   A reply to a staff-only comment is staff-only (`Core.Tasks.Comments`).
   """
 

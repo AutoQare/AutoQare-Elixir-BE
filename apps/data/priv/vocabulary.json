@@ -104,6 +104,8 @@
     "linkedin",
     "upwork",
     "phone",
+    "indeed",
+    "fiverr",
     "other"
   ],
   "contact_roles": [
@@ -120,11 +122,21 @@
     "extension",
     "import"
   ],
+  "customer_mail_states": [
+    "pending",
+    "sent",
+    "failed",
+    "skipped"
+  ],
   "customer_statuses": [
     "invited",
     "active",
     "paused",
     "ended"
+  ],
+  "date_orders": [
+    "day_month",
+    "month_day"
   ],
   "delivery_channels": [
     "push",
@@ -134,13 +146,19 @@
   "delivery_skip_reasons": [
     "read",
     "no_target",
-    "preference_off"
+    "preference_off",
+    "folded"
   ],
   "delivery_states": [
     "pending",
     "sent",
     "skipped",
     "failed"
+  ],
+  "digest_frequencies": [
+    "daily",
+    "weekly",
+    "off"
   ],
   "document_kinds": [
     "cv",
@@ -176,7 +194,8 @@
     "customer",
     "extension",
     "email",
-    "system"
+    "system",
+    "import"
   ],
   "event_visibilities": [
     "staff",
@@ -190,9 +209,44 @@
     "thread",
     "other"
   ],
+  "ext_save_only_sites": [
+    "yc_waas",
+    "wellfound"
+  ],
   "ext_sites": [
     "linkedin",
-    "upwork"
+    "upwork",
+    "indeed",
+    "yc_waas",
+    "wellfound"
+  ],
+  "hour_groups": [
+    "active",
+    "posted",
+    "replied"
+  ],
+  "import_kinds": [
+    "applications",
+    "jobs",
+    "contacts"
+  ],
+  "import_row_results": [
+    "new",
+    "update",
+    "duplicate",
+    "error",
+    "skipped"
+  ],
+  "import_states": [
+    "reading",
+    "mapping",
+    "checking",
+    "ready",
+    "importing",
+    "imported",
+    "undoing",
+    "undone",
+    "failed"
   ],
   "inbound_outcomes": [
     "landed",
@@ -220,6 +274,12 @@
     "company",
     "already_known",
     "other"
+  ],
+  "job_origin_kinds": [
+    "brief",
+    "inquiry",
+    "order",
+    "alert"
   ],
   "job_origins": [
     "manual",
@@ -386,6 +446,33 @@
     "extension",
     "digest"
   ],
+  "notification_groups": [
+    "tasks",
+    "leads",
+    "conversations",
+    "meetings",
+    "approvals",
+    "profiles",
+    "behaviour",
+    "system",
+    "account"
+  ],
+  "observation_kinds": [
+    "seen_online",
+    "last_active_reported",
+    "job_posted",
+    "job_reposted",
+    "replied",
+    "viewed_proposal",
+    "viewed_profile",
+    "message_read"
+  ],
+  "observation_sources": [
+    "extension",
+    "job",
+    "email",
+    "manual"
+  ],
   "peer_access": [
     "hidden",
     "view",
@@ -470,6 +557,11 @@
     "working",
     "strong",
     "expert"
+  ],
+  "snooze_choices": [
+    "hour",
+    "tomorrow",
+    "monday"
   ],
   "stage_kinds": [
     "inbound",
@@ -557,6 +649,10 @@
     "lead",
     "member"
   ],
+  "time_zone_sources": [
+    "upwork",
+    "manual"
+  ],
   "tracker_columns": [
     "applied",
     "title",
@@ -603,6 +699,22 @@
     "no",
     "existing_auth_only",
     "unknown"
+  ],
+  "watch_cooldowns": [
+    30,
+    120,
+    1440
+  ],
+  "watch_expiries": [
+    "none",
+    "week",
+    "month"
+  ],
+  "watch_triggers": [
+    "comes_online",
+    "posts_job",
+    "replies",
+    "any_activity"
   ],
   "workplace_types": [
     "remote",

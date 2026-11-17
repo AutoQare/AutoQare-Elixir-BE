@@ -1,6 +1,6 @@
 defmodule Core.Auth.Guardian do
   @moduledoc """
-  JWT issuing and verification (copied from mCart).
+  JWT issuing and verification (copied from tCart).
 
   Access tokens last an hour, refresh tokens a week. `guardian_db` backs both
   so revocation is real: sign-out-everywhere and removing a person must
@@ -112,7 +112,7 @@ defmodule Core.Auth.Guardian do
   # ─── `guardian_db`'s hooks ──────────────────────────────────────────────────
   #
   # `use Guardian` does not install these, and without them `revoke/1` deletes
-  # nothing and a token stays valid until it expires (mCart found this the
+  # nothing and a token stays valid until it expires (tCart found this the
   # hard way, `PA6`). `on_verify` is what makes revocation *take effect*: a
   # token whose row has gone stops verifying, for one indexed read per
   # authenticated request.

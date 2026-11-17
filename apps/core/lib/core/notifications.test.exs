@@ -75,7 +75,10 @@ defmodule Core.NotificationsTest do
     assert {:ok, %{unread: 1}} = Notifications.count(scope_for(hira))
 
     assert {:ok, %{items: [], next_cursor: nil}} =
-             Notifications.page(scope, %{"unread" => "true"})
+             Notifications.page(scope, %{"$where" => %{"unread" => %{"$EQUAL" => "true"}}})
+
+    assert {:error, {:invalid_filter, %{"unread" => _}}} =
+             Notifications.page(scope, %{"$where" => %{"unread" => %{"$EQUAL" => "1"}}})
   end
 
   # AQ-08 QP8-1: one seam, so no notice module can forget its deliveries.

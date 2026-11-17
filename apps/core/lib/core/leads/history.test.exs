@@ -32,21 +32,31 @@ defmodule Core.Leads.HistoryTest do
     assert newest.note == "N3" and length(items) == 3
 
     assert {:ok, %{items: [_, _, _]}} =
-             History.page(scope_for(c.hira), c.lead.id, %{"kind" => "note_added,applied"})
+             History.page(scope_for(c.hira), c.lead.id, %{
+               "$where" => %{"kind" => %{"$IN" => ["note_added", "applied"]}}
+             })
 
     {:ok, %{items: [first, second | _]}} =
-      History.page(scope_for(c.hira), c.lead.id, %{"kind" => "note_added"})
+      History.page(scope_for(c.hira), c.lead.id, %{"$where" => %{"kind" => "note_added"}})
 
     assert {:ok, %{items: [after_first | _]}} =
              History.page(scope_for(c.hira), c.lead.id, %{
-               "kind" => "note_added",
+               "$where" => %{"kind" => %{"$EQUAL" => "note_added"}},
                "before" => first.id
              })
 
     assert after_first.id == second.id
 
-    assert History.page(scope_for(c.hira), c.lead.id, %{"kind" => "nope"}) ==
-             {:error, {:invalid, %{"kind" => ["has a value that is not one of the list"]}}}
+    assert {:ok, %{items: []}} =
+             History.page(scope_for(c.hira), c.lead.id, %{
+               "$where" => %{"kind" => %{"$NOT_IN" => ["note_added", "saved"]}}
+             })
+
+    assert {:error, {:invalid_filter, %{"kind" => _}}} =
+             History.page(scope_for(c.hira), c.lead.id, %{"$where" => %{"kind" => "nope"}})
+
+    assert {:error, {:invalid_filter, %{"actor" => _}}} =
+             History.page(scope_for(c.hira), c.lead.id, %{"$where" => %{"actor" => "me"}})
   end
 
   test "keyset pages of fifty", c do

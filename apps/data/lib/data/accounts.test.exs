@@ -72,8 +72,12 @@ defmodule Data.AccountsTest do
       assert Accounts.get_settings(user.id).theme == :system
       assert {:ok, _row} = Accounts.put_settings(user.id, %{theme: :dark})
       assert Accounts.get_settings(user.id).theme == :dark
-      assert {:ok, row} = Accounts.put_settings(user.id, %{digest_on: false})
-      assert row.theme == :dark and row.digest_on == false
+      assert {:ok, row} = Accounts.put_settings(user.id, %{digest_frequency: :weekly})
+      assert row.theme == :dark and row.digest_frequency == :weekly
+      assert {:error, changeset} = Accounts.put_settings(user.id, %{digest_frequency: "hourly"})
+      assert %{digest_frequency: [_invalid]} = errors_on(changeset)
+      assert {:ok, row} = Accounts.put_settings(user.id, %{snoozed_until: @now})
+      assert row.snoozed_until == @now
     end
   end
 

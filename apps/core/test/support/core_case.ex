@@ -9,6 +9,7 @@ defmodule Core.CoreCase do
 
   use ExUnit.CaseTemplate
 
+  alias Core.Leads.{Act, Ledger}
   alias Ecto.Adapters.SQL.Sandbox
 
   using do
@@ -51,6 +52,64 @@ defmodule Core.CoreCase do
     :ok = Core.Media.store(scope, media.id, bytes)
     {:ok, media} = Core.Media.confirm(scope, media.id, %{}, DateTime.utc_now())
     media
+  end
+
+  # ── Leads moved through their verbs at a given moment (AQ-11's tests) ───────
+
+  @doc """
+  An application through `POST /leads`'s verb at `at` (`now` too): a new
+  lead of `profile` on `job`, its `applied` row written by the ledger.
+  Answers the lead.
+  """
+  def apply_at(scope, job, profile, %DateTime{} = at) do
+    {:ok, sheet} =
+      Core.Leads.create(
+        scope,
+        %{"job_id" => job.id, "profile_id" => profile.id, "as" => "apply"},
+        at
+      )
+
+    Data.Leads.get(Data.Scope.organisation_id(scope), sheet.id)
+  end
+
+  @doc "A lead verb (`Core.Leads.Act.run/6`) at `at`, `from` where the lead is. Answers the lead."
+  def verb_at(scope, verb, lead, body, %DateTime{} = at) do
+    lead = Data.Leads.reload(lead)
+    from = %{"state" => to_string(lead.state), "stage" => lead.stage && lead.stage.key}
+    {:ok, _sheet} = Act.run(scope, verb, lead.id, Map.put(body, "from", from), at)
+    Data.Leads.reload(lead)
+  end
+
+  @doc """
+  An employer's reply landing on `lead` at `at`, as `Core.Conversations.Record`
+  writes it: the message (from a new contact, or `from_kind:`) and its
+  `message_in` row. Answers the message.
+  """
+  def reply_at(scope, lead, %DateTime{} = at, attrs \\ []) do
+    attrs = Map.new(attrs)
+    kind = attrs[:from_kind] || :contact
+    contact = if kind == :contact, do: Data.Fixtures.contact_fixture(scope, name: "Mei Chen")
+
+    m =
+      Data.Fixtures.message_fixture(scope,
+        lead: lead,
+        contact: contact,
+        from_kind: kind,
+        direction: :in,
+        sent_at: at,
+        body_text: attrs[:body_text] || "Thanks, let's talk."
+      )
+
+    _event =
+      Ledger.record(
+        scope,
+        Data.Leads.reload(lead),
+        :message_in,
+        %{message_id: m.id, occurred_at: at},
+        at
+      )
+
+    m
   end
 
   @doc "Changeset errors as %{field => [message]}, for readable assertions."

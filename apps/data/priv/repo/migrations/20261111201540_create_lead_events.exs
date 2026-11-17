@@ -38,6 +38,15 @@ defmodule Data.Repo.Migrations.CreateLeadEvents do
 
   `lead_stage_visits` and `duplicate_overrides` are read from here: a
   `stage_moved` row is a visit, an `applied` row with `is_again` an override.
+
+  AQ-11 §7.4 (QP11-5): `stage_kind`, the engine kind of the stage reached
+  (a custom stage's anchor), written by the ledger on `applied` and
+  `stage_moved` and on no other kind, so the funnel reads "reached an
+  interview" from history. `(organisation_id, kind, occurred_at)` serves
+  the dashboards' windows.
+
+  AQ-12 §11.4: `actor_kind` gains `import` — a row an import wrote, with
+  the person it is credited to as `actor_user_id` (never null for it).
   """
 
   @kinds ~w(saved applied stage_moved state_moved outcome_set reopened owner_changed
@@ -47,6 +56,8 @@ defmodule Data.Repo.Migrations.CreateLeadEvents do
             meeting_done meeting_cancelled classified approval_requested approval_decided
             approval_withdrawn)
   @outcomes ~w(hired rejected withdrawn position_closed no_response not_pursued)
+  @stage_kinds ~w(inbound applied seen screening assessment interview ai_interview final offer
+                  negotiation contract)
 
   def change do
     create table(:lead_events, primary_key: false) do
@@ -77,13 +88,14 @@ defmodule Data.Repo.Migrations.CreateLeadEvents do
       add(:approval_id, references(:approvals, type: :uuid, on_delete: :nilify_all))
       add(:is_again, :boolean, null: false, default: false)
       add(:request_id, :uuid)
+      add(:stage_kind, :text)
     end
 
     create(constraint(:lead_events, :kind_known, check: "kind IN (#{list(@kinds)})"))
 
     create(
       constraint(:lead_events, :actor_kind_known,
-        check: "actor_kind IN ('user','customer','extension','email','system')"
+        check: "actor_kind IN ('user','customer','extension','email','system','import')"
       )
     )
 
@@ -99,7 +111,8 @@ defmodule Data.Repo.Migrations.CreateLeadEvents do
 
     create(
       constraint(:lead_events, :actor_user_with_person,
-        check: "actor_kind NOT IN ('user','customer','extension') OR actor_user_id IS NOT NULL"
+        check:
+          "actor_kind NOT IN ('user','customer','extension','import') OR actor_user_id IS NOT NULL"
       )
     )
 
@@ -113,6 +126,18 @@ defmodule Data.Repo.Migrations.CreateLeadEvents do
 
     create(
       constraint(:lead_events, :again_only_applied, check: "NOT is_again OR kind = 'applied'")
+    )
+
+    create(
+      constraint(:lead_events, :stage_kind_known,
+        check: "stage_kind IS NULL OR stage_kind IN (#{list(@stage_kinds)})"
+      )
+    )
+
+    create(
+      constraint(:lead_events, :stage_kind_on_stage_events,
+        check: "stage_kind IS NULL OR kind IN ('applied','stage_moved')"
+      )
     )
 
     # One subject at most (PLAN §16): the CV, the task, the note, the
@@ -133,7 +158,7 @@ defmodule Data.Repo.Migrations.CreateLeadEvents do
     )
 
     create(index(:lead_events, [:lead_id, "occurred_at DESC"]))
-    create(index(:lead_events, [:organisation_id]))
+    create(index(:lead_events, [:organisation_id, :kind, :occurred_at]))
     create(index(:lead_events, [:actor_user_id]))
     create(index(:lead_events, [:document_id]))
     create(index(:lead_events, [:task_id]))

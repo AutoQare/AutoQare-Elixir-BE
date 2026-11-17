@@ -1,0 +1,6 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("See your applications", @url) %>
+<%= link(@url) %>

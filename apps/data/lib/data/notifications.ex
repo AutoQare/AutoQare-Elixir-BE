@@ -68,44 +68,30 @@ defmodule Data.Notifications do
   # ── Reads ───────────────────────────────────────────────────────────────────
 
   @doc """
-  One page of a person's notifications, newest first, by keyset: `after`
-  is the `{inserted_at, id}` of the last row already shown. Options:
-  `group` (a group key), `unread` (boolean), `after`, `limit`. Answers
-  `{rows, more?}`.
+  One page of a person's notifications, newest first, by keyset, narrowed
+  by `where` (the list's `$where`, `Data.Filters.Notifications`: `unread`,
+  `group`). Options: `after` (the `{inserted_at, id}` of the last row
+  already shown), `limit`. Answers `{:ok, {rows, more?}}`, or the 422
+  `invalid_filter`.
   """
-  @spec page(binary(), keyword()) :: {[Notification.t()], boolean()}
-  def page(user_id, opts \\ []) do
+  @spec page(binary(), term(), keyword()) ::
+          {:ok, {[Notification.t()], boolean()}} | {:error, term()}
+  def page(user_id, where, opts \\ []) do
     limit = Keyword.get(opts, :limit, 30)
 
-    rows =
+    base =
       from(n in Notification,
         where: n.user_id == ^user_id,
         order_by: [desc: n.inserted_at, desc: n.id],
         limit: ^(limit + 1),
         preload: ^@preload
       )
-      |> in_group(Keyword.get(opts, :group))
-      |> unread(Keyword.get(opts, :unread, false))
-      |> after_key(Keyword.get(opts, :after))
-      |> Repo.all()
 
-    {Enum.take(rows, limit), length(rows) > limit}
+    with {:ok, query} <- Data.Filters.where(base, Data.Filters.Notifications, where) do
+      rows = query |> after_key(Keyword.get(opts, :after)) |> Repo.all()
+      {:ok, {Enum.take(rows, limit), length(rows) > limit}}
+    end
   end
-
-  defp in_group(query, nil), do: query
-
-  defp in_group(query, group),
-    do:
-      where(
-        query,
-        [n],
-        n.notification_kind_key in subquery(
-          from(k in Kind, where: k.notification_group_key == ^group, select: k.key)
-        )
-      )
-
-  defp unread(query, true), do: where(query, [n], is_nil(n.read_at))
-  defp unread(query, _all), do: query
 
   defp after_key(query, nil), do: query
 
@@ -180,9 +166,9 @@ defmodule Data.Notifications do
   end
 
   @doc """
-  The accounts the digest scan looks at (AQ-08 §7.4): live, with the digest
-  on (no settings row means on, at 08:00), as `%{user_id, digest_time,
-  zone}`.
+  The accounts the digest scan looks at (AQ-08 §7.4; AQ-10B QP10b-12):
+  live, with the digest not `off` (no settings row means daily at 08:00),
+  as `%{user_id, digest_time, digest_frequency, zone, customer?}`.
   """
   @spec digest_candidates_for_system() :: [map()]
   def digest_candidates_for_system do
@@ -190,10 +176,50 @@ defmodule Data.Notifications do
       join: p in assoc(u, :person),
       left_join: s in Data.Accounts.UserSettings,
       on: s.user_id == u.id,
+      left_join: c in Data.Customers.Customer,
+      on: c.user_id == u.id,
       where:
         is_nil(u.suspended_at) and is_nil(u.deactivated_at) and is_nil(u.purged_at) and
-          (is_nil(s.user_id) or s.digest_on == true),
-      select: %{user_id: u.id, digest_time: s.digest_time, zone: p.timezone}
+          (is_nil(s.user_id) or s.digest_frequency != :off),
+      select: %{
+        user_id: u.id,
+        digest_time: s.digest_time,
+        digest_frequency: s.digest_frequency,
+        zone: p.timezone,
+        customer?: not is_nil(c.id)
+      }
+    )
+    |> Repo.all()
+    |> Enum.map(
+      &%{
+        &1
+        | digest_time: &1.digest_time || ~T[08:00:00],
+          digest_frequency: &1.digest_frequency || :daily
+      }
+    )
+  end
+
+  @doc """
+  The live accounts for a weekly scan (AQ-10B QP10b-13), as `%{user_id,
+  organisation_id, digest_time, zone, customer_id}`: staff with their
+  organisation, customers with theirs and their customer row.
+  """
+  @spec weekly_candidates_for_system() :: [map()]
+  def weekly_candidates_for_system do
+    from(u in Data.Accounts.User,
+      join: p in assoc(u, :person),
+      left_join: s in Data.Accounts.UserSettings,
+      on: s.user_id == u.id,
+      left_join: c in Data.Customers.Customer,
+      on: c.user_id == u.id,
+      where: is_nil(u.suspended_at) and is_nil(u.deactivated_at) and is_nil(u.purged_at),
+      select: %{
+        user_id: u.id,
+        digest_time: s.digest_time,
+        zone: p.timezone,
+        customer_id: c.id,
+        customer_zone: c.timezone
+      }
     )
     |> Repo.all()
     |> Enum.map(&%{&1 | digest_time: &1.digest_time || ~T[08:00:00]})
@@ -210,20 +236,21 @@ defmodule Data.Notifications do
   end
 
   @doc """
-  The person's unread rows since `since` whose kind has the digest among its
-  channels, in `groups`, oldest first, with their group: what a digest says.
+  The person's unread rows since `since` of `kinds` (the kinds whose
+  digest is on for them, decided by `core`), oldest first, with their
+  group: what a digest says.
   """
   @spec unread_for_digest(binary(), DateTime.t(), [String.t()]) :: [map()]
   def unread_for_digest(_user_id, _since, []), do: []
 
-  def unread_for_digest(user_id, %DateTime{microsecond: {us, _p}} = since, groups) do
+  def unread_for_digest(user_id, %DateTime{microsecond: {us, _p}} = since, kinds) do
     since = %{since | microsecond: {us, 6}}
 
     from(n in Notification,
       join: k in assoc(n, :notification_kind),
       where:
         n.user_id == ^user_id and is_nil(n.read_at) and n.inserted_at > ^since and
-          "digest" in k.default_channels and k.notification_group_key in ^groups,
+          n.notification_kind_key in ^kinds,
       order_by: [asc: n.inserted_at, asc: n.id],
       select: %{
         id: n.id,
@@ -234,6 +261,32 @@ defmodule Data.Notifications do
       }
     )
     |> Repo.all()
+  end
+
+  @doc """
+  An organisation's rows written since `since`, oldest first, with their
+  person, kind and deliveries: the dev route's checks (AQ-10B §11.4).
+  """
+  @spec since_for_system(binary(), DateTime.t()) :: [Notification.t()]
+  def since_for_system(organisation_id, %DateTime{microsecond: {us, _p}} = since) do
+    since = %{since | microsecond: {us, 6}}
+
+    from(n in Notification,
+      where: n.organisation_id == ^organisation_id and n.inserted_at >= ^since,
+      order_by: [asc: n.inserted_at, asc: n.id],
+      preload: [:notification_kind, user: :person]
+    )
+    |> Repo.all()
+  end
+
+  @doc "Of `user_ids`, the ones a customer row holds (their portal login)."
+  @spec customer_users([binary()]) :: MapSet.t()
+  def customer_users([]), do: MapSet.new()
+
+  def customer_users(user_ids) do
+    from(c in Data.Customers.Customer, where: c.user_id in ^user_ids, select: c.user_id)
+    |> Repo.all()
+    |> MapSet.new()
   end
 
   @doc "A person's rows for one task: what a test or a run asks after a verb."

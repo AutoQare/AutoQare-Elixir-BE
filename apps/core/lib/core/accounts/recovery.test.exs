@@ -16,8 +16,10 @@ defmodule Core.Accounts.RecoveryTest do
   end
 
   # The token itself only ever exists in the job's args.
+  # The job that carries the token (P10b adds the old address's notice,
+  # which carries none).
   defp token_from_job(worker) do
-    [job] = all_enqueued(worker: worker)
+    [job] = for j <- all_enqueued(worker: worker), j.args["secret"], do: j
     {job.args["secret"], job.args["subject_id"]}
   end
 
@@ -118,6 +120,20 @@ defmodule Core.Accounts.RecoveryTest do
       assert Enum.any?(Data.Audit.list_for_subject(org.id, "users", user.id), fn e ->
                e.action == "email_changed" and e.after == %{"email" => "new.address@example.com"}
              end)
+
+      # AQ-10B §5.1 A8, A9: the old address told when asked and when done;
+      # the person told in-app and by email (locked).
+      kinds =
+        for j <- all_enqueued(worker: Notifire.Workers.EmailChangeWorker), do: j.args["kind"]
+
+      assert Enum.sort(kinds) == ~w(email_change email_change_notice email_changed)
+
+      assert [%{title: "Your sign-in email is now new.address@example.com"}] =
+               for(
+                 n <- Repo.all(Data.Notifications.Notification),
+                 n.user_id == user.id and n.notification_kind_key == "account.security",
+                 do: n
+               )
     end
 
     test "an address another account holds is taken", %{scope: scope} do

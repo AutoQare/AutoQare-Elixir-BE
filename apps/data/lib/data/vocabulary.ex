@@ -10,7 +10,7 @@ defmodule Data.Vocabulary do
 
   **The order is meaningful.** States run in the order a lead or a task moves
   through them, and pickers list values as written here. Every list is
-  strings except `task_reminders`, which is minutes.
+  strings except `task_reminders` and `watch_cooldowns`, which are minutes.
 
   A schema that stores one of these uses `Ecto.Enum` over the list *and* a
   `CHECK` constraint named `<field>_known` (`Core.ConventionsTest`).
@@ -19,7 +19,7 @@ defmodule Data.Vocabulary do
 
   `stage_kinds` are the **engine kinds**. A pipeline may add its own stages,
   stored as `"custom.<slug>"` and anchored to an engine kind (PLAN §6.2,
-  mCart's stage templates). They are not listed here because they are
+  tCart's stage templates). They are not listed here because they are
   data, not vocabulary: `custom_stage?/1` recognises one.
   """
 
@@ -64,6 +64,7 @@ defmodule Data.Vocabulary do
   @job_sources ~w(linkedin upwork indeed yc_waas wellfound fiverr greenhouse lever ashby workable
                   company_site email other)
   @job_origins ~w(manual extension email import)
+  @job_origin_kinds ~w(brief inquiry order alert)
   @job_statuses ~w(open closed unknown)
   @job_close_reasons ~w(filled expired withdrawn other)
   @remote_scopes ~w(global region country_list unknown)
@@ -91,17 +92,18 @@ defmodule Data.Vocabulary do
   @lead_priorities ~w(low high urgent)
   @bid_periods ~w(hour project)
   @lead_archive_reasons ~w(by_hand inactive)
-  @event_actors ~w(user customer extension email system)
+  @event_actors ~w(user customer extension email system import)
   @event_visibilities ~w(staff customer)
   @saved_view_screens ~w(tracker leads jobs board)
   @tracker_columns ~w(applied title company source customer profile owner state outcome next
                       last_activity money workplace engagement cv labels missing)
   @tracker_groups ~w(none state stage customer profile owner source)
   @board_lanes ~w(none customer profile owner source)
-  @ext_sites ~w(linkedin upwork)
+  @ext_sites ~w(linkedin upwork indeed yc_waas wellfound)
+  @ext_save_only_sites ~w(yc_waas wellfound)
   @ext_page_kinds ~w(job search proposal confirmation thread other)
   @contact_sources ~w(manual email extension import)
-  @contact_handle_kinds ~w(email linkedin upwork phone other)
+  @contact_handle_kinds ~w(email linkedin upwork phone indeed fiverr other)
   @contact_roles ~w(recruiter hiring_manager interviewer client referrer other)
   @match_methods ~w(by_hand headers thread_id sender_handle created_from_triage receiving_inbox
                      sender_domain platform_notice)
@@ -117,9 +119,25 @@ defmodule Data.Vocabulary do
   @inbound_providers ~w(postmark dev)
   @delivery_channels ~w(push email extension)
   @delivery_states ~w(pending sent skipped failed)
-  @delivery_skip_reasons ~w(read no_target preference_off)
+  @delivery_skip_reasons ~w(read no_target preference_off folded)
   @push_apps ~w(team client)
   @notification_channels ~w(inapp push email extension digest)
+  @notification_groups ~w(tasks leads conversations meetings approvals profiles behaviour system account)
+  @digest_frequencies ~w(daily weekly off)
+  @snooze_choices ~w(hour tomorrow monday)
+  @customer_mail_states ~w(pending sent failed skipped)
+  @observation_kinds ~w(seen_online last_active_reported job_posted job_reposted replied
+                        viewed_proposal viewed_profile message_read)
+  @observation_sources ~w(extension job email manual)
+  @hour_groups ~w(active posted replied)
+  @watch_triggers ~w(comes_online posts_job replies any_activity)
+  @time_zone_sources ~w(upwork manual)
+  @watch_cooldowns [30, 120, 1440]
+  @watch_expiries ~w(none week month)
+  @import_kinds ~w(applications jobs contacts)
+  @import_states ~w(reading mapping checking ready importing imported undoing undone failed)
+  @import_row_results ~w(new update duplicate error skipped)
+  @date_orders ~w(day_month month_day)
 
   @custom_stage_prefix "custom."
 
@@ -134,7 +152,7 @@ defmodule Data.Vocabulary do
   @doc "The engine stage kinds a pipeline's stages anchor to."
   def stage_kinds, do: @stage_kinds
 
-  @doc "A task's states, as mCart's board has them (AQ-02 §7.6); archived is a flag, not a state."
+  @doc "A task's states, as tCart's board has them (AQ-02 §7.6); archived is a flag, not a state."
   def task_states, do: @task_states
   @doc "A task's priority; none is *normal*."
   def task_priorities, do: @task_priorities
@@ -205,6 +223,13 @@ defmodule Data.Vocabulary do
   def job_sources, do: @job_sources
   @doc "How a job came into the pool."
   def job_origins, do: @job_origins
+
+  @doc """
+  What brought a job in, beyond its origin (AQ-12 §11.4): a Fiverr brief,
+  inquiry or order (`source = fiverr` only), or a job-alert email
+  (`origin = email` only).
+  """
+  def job_origin_kinds, do: @job_origin_kinds
   @doc "Whether a job is still taking applications."
   def job_statuses, do: @job_statuses
   @doc "Why a job was marked closed."
@@ -262,6 +287,9 @@ defmodule Data.Vocabulary do
   @doc "The sites the extension reads (AQ-05 §5.5): a selector config and a miss name one."
   def ext_sites, do: @ext_sites
 
+  @doc "The sites read only on a press (AQ-12 §5, QP12-19): no watcher, no capture, no account read."
+  def ext_save_only_sites, do: @ext_save_only_sites
+
   @doc "The kinds of page an adapter tells apart (AQ-05 §5.5; AQ-06 §9 adds `thread`): where a selector missed."
   def ext_page_kinds, do: @ext_page_kinds
 
@@ -308,106 +336,85 @@ defmodule Data.Vocabulary do
   @doc "A delivery's life (AQ-08 §5): waiting, sent, skipped with a reason, failed after three attempts."
   def delivery_states, do: @delivery_states
 
-  @doc "Why a delivery was skipped (AQ-08 §7.2): read before its email went, nowhere to send it, switched off."
+  @doc "Why a delivery was skipped (AQ-08 §7.2; AQ-10B: `folded`, QP10b-17)."
   def delivery_skip_reasons, do: @delivery_skip_reasons
   @doc "The app a browser turned push on in (AQ-08 §5): the console or the portal."
   def push_apps, do: @push_apps
 
   @doc "What a notification kind's `default_channels` holds (AQ-08 §11.4); the kinds' CHECK uses it."
   def notification_channels, do: @notification_channels
+  @doc "The notification groups, in their order (AQ-10B §11.4)."
+  def notification_groups, do: @notification_groups
+  @doc "How often the digest goes (QP10b-12): daily, weekly on Monday, or off."
+  def digest_frequencies, do: @digest_frequencies
+  @doc "*Pause notifications* (QP10b-3): 1 hour, until tomorrow 08:00, until Monday 08:00."
+  def snooze_choices, do: @snooze_choices
+  @doc "A customer mail's life (AQ-10B §11.4, QP10b-2)."
+  def customer_mail_states, do: @customer_mail_states
+
+  @doc "What an observation saw (AQ-10 §11.4, PLAN §10.1's eight)."
+  def observation_kinds, do: @observation_kinds
+  @doc "Where an observation came from (AQ-10 §5)."
+  def observation_sources, do: @observation_sources
 
   @doc """
-  Every list, by name — what `priv/vocabulary.json` holds.
+  The heat map's rows of `subject_hours` (AQ-10 §11.4): `active` takes
+  seen_online, last_active_reported, viewed_proposal, viewed_profile and
+  message_read; `posted` the two job kinds; `replied` replies.
+  """
+  def hour_groups, do: @hour_groups
+
+  @doc "What fires a watch (AQ-10 §5, QP10-8)."
+  def watch_triggers, do: @watch_triggers
+  @doc "Where a company's time zone came from (AQ-10 §6.3, QP10-7): a manual zone wins."
+  def time_zone_sources, do: @time_zone_sources
+  @doc "A watch's cool-down choices in minutes (QP10-11): 30 min, 2 h, 1 day."
+  def watch_cooldowns, do: @watch_cooldowns
+  @doc "A watch's expiry choices (QP10-11): none, a week, a month."
+  def watch_expiries, do: @watch_expiries
+
+  @doc "What an import holds (AQ-12 QP12-3): applications (jobs and leads), jobs, contacts."
+  def import_kinds, do: @import_kinds
+
+  @doc "An import's life (AQ-12 §11.4): read, mapped, checked (the dry run), imported, undone."
+  def import_states, do: @import_states
+
+  @doc "What the dry run made of a row (AQ-12 §11.4)."
+  def import_row_results, do: @import_row_results
+
+  @doc "How an import reads `10/9/2026` (QP12-8): day/month by default."
+  def date_orders, do: @date_orders
+
+  @lists ~w(roles team_member_roles lead_states lead_outcomes stage_kinds task_states
+             task_priorities task_close_reasons task_customer_access task_relation_kinds
+             task_sources task_history_fields task_reminders platforms engagement_types
+             workplace_types comp_periods apply_methods channel_operators approval_kinds
+             approval_states approval_rules approval_needs reviewer_slots approval_decisions
+             approval_effects meeting_kinds meeting_platforms customer_statuses seniorities
+             profile_statuses pipeline_keys skill_levels channel_listeners channel_statuses
+             document_kinds job_sources job_origins job_origin_kinds job_statuses
+             job_close_reasons remote_scopes regions visa_policies durations comp_sources
+             equity_kinds company_size_bands upwork_experience_levels upwork_spent_bands
+             job_dismiss_reasons suggestion_parts peer_access share_levels lead_event_kinds
+             lead_confirmations lead_priorities bid_periods lead_archive_reasons event_actors
+             event_visibilities saved_view_screens tracker_columns tracker_groups board_lanes
+             ext_sites ext_save_only_sites ext_page_kinds contact_sources contact_handle_kinds
+             contact_roles match_methods match_confidences message_directions
+             message_from_kinds message_captures message_classes meeting_statuses
+             meeting_sources inbound_outcomes inbound_providers delivery_channels
+             delivery_states delivery_skip_reasons push_apps notification_channels
+             notification_groups digest_frequencies snooze_choices customer_mail_states
+             observation_kinds observation_sources hour_groups watch_triggers
+             time_zone_sources watch_cooldowns watch_expiries import_kinds import_states
+             import_row_results date_orders)a
+
+  @doc """
+  Every list, by name — what `priv/vocabulary.json` holds: each function
+  above named in `@lists`, so a list added without its name there is
+  missing from the file and `Data.VocabularyTest` says so.
   """
   @spec all() :: %{atom() => [String.t() | integer()]}
-  def all do
-    %{
-      roles: @roles,
-      team_member_roles: @team_member_roles,
-      lead_states: @lead_states,
-      lead_outcomes: @lead_outcomes,
-      stage_kinds: @stage_kinds,
-      task_states: @task_states,
-      task_priorities: @task_priorities,
-      task_close_reasons: @task_close_reasons,
-      task_customer_access: @task_customer_access,
-      task_relation_kinds: @task_relation_kinds,
-      task_sources: @task_sources,
-      task_history_fields: @task_history_fields,
-      task_reminders: @task_reminders,
-      platforms: @platforms,
-      engagement_types: @engagement_types,
-      workplace_types: @workplace_types,
-      comp_periods: @comp_periods,
-      apply_methods: @apply_methods,
-      channel_operators: @channel_operators,
-      approval_kinds: @approval_kinds,
-      approval_states: @approval_states,
-      approval_rules: @approval_rules,
-      approval_needs: @approval_needs,
-      reviewer_slots: @reviewer_slots,
-      approval_decisions: @approval_decisions,
-      approval_effects: @approval_effects,
-      meeting_kinds: @meeting_kinds,
-      meeting_platforms: @meeting_platforms,
-      customer_statuses: @customer_statuses,
-      seniorities: @seniorities,
-      profile_statuses: @profile_statuses,
-      pipeline_keys: @pipeline_keys,
-      skill_levels: @skill_levels,
-      channel_listeners: @channel_listeners,
-      channel_statuses: @channel_statuses,
-      document_kinds: @document_kinds,
-      job_sources: @job_sources,
-      job_origins: @job_origins,
-      job_statuses: @job_statuses,
-      job_close_reasons: @job_close_reasons,
-      remote_scopes: @remote_scopes,
-      regions: @regions,
-      visa_policies: @visa_policies,
-      durations: @durations,
-      comp_sources: @comp_sources,
-      equity_kinds: @equity_kinds,
-      company_size_bands: @company_size_bands,
-      upwork_experience_levels: @upwork_experience_levels,
-      upwork_spent_bands: @upwork_spent_bands,
-      job_dismiss_reasons: @job_dismiss_reasons,
-      suggestion_parts: @suggestion_parts,
-      peer_access: @peer_access,
-      share_levels: @share_levels,
-      lead_event_kinds: @lead_event_kinds,
-      lead_confirmations: @lead_confirmations,
-      lead_priorities: @lead_priorities,
-      bid_periods: @bid_periods,
-      lead_archive_reasons: @lead_archive_reasons,
-      event_actors: @event_actors,
-      event_visibilities: @event_visibilities,
-      saved_view_screens: @saved_view_screens,
-      tracker_columns: @tracker_columns,
-      tracker_groups: @tracker_groups,
-      board_lanes: @board_lanes,
-      ext_sites: @ext_sites,
-      ext_page_kinds: @ext_page_kinds,
-      contact_sources: @contact_sources,
-      contact_handle_kinds: @contact_handle_kinds,
-      contact_roles: @contact_roles,
-      match_methods: @match_methods,
-      match_confidences: @match_confidences,
-      message_directions: @message_directions,
-      message_from_kinds: @message_from_kinds,
-      message_captures: @message_captures,
-      message_classes: @message_classes,
-      meeting_statuses: @meeting_statuses,
-      meeting_sources: @meeting_sources,
-      inbound_outcomes: @inbound_outcomes,
-      inbound_providers: @inbound_providers,
-      delivery_channels: @delivery_channels,
-      delivery_states: @delivery_states,
-      delivery_skip_reasons: @delivery_skip_reasons,
-      push_apps: @push_apps,
-      notification_channels: @notification_channels
-    }
-  end
+  def all, do: Map.new(@lists, &{&1, apply(__MODULE__, &1, [])})
 
   @doc """
   Whether a stage key is a pipeline's own (`"custom.<slug>"`) rather than an

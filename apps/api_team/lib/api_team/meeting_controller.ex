@@ -1,7 +1,8 @@
 defmodule ApiTeam.MeetingController do
   @moduledoc """
   Meetings in the console (AQ-06 §8, §11.1): the Meetings page
-  (`GET /meetings?team_id&from&to`), a lead's meetings, *Schedule meeting*
+  (`GET /meetings?team_id&$where`, `Data.Filters.Meetings`), a lead's
+  meetings, *Schedule meeting*
   (201, with its `clash`), a meeting, its edit, the verbs (reschedule,
   cancel, done, no-show: 200), the clash check (with the stage a kind
   offers) and the ICS file (`GET /meetings/:id/ics`, `text/calendar`).

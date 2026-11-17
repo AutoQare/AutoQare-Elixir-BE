@@ -1,0 +1,2 @@
+<%= for {label, value} <- @rows do %><%= label %>: <%= value %>
+<% end %>

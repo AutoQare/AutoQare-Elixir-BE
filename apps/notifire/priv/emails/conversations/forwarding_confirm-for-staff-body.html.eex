@@ -1,0 +1,7 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Open the customer", @url) %>
+<%= link(@url) %>
+<%= paragraph("Gmail needs this code once to start forwarding.") %>

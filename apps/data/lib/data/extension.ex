@@ -22,18 +22,23 @@ defmodule Data.Extension do
   end
 
   @doc """
-  Every published version, newest first: one site's by version with
-  `site`, every site's by when it was published without.
+  Every published version, newest first — by version (a site's order),
+  then when it was published, then site — narrowed by `where`
+  (`Data.Filters.ExtensionConfigs`: `site`, `version`): `{:ok, configs}`,
+  or the 422 `invalid_filter`.
   """
-  @spec configs(atom() | String.t() | nil) :: [Config.t()]
-  def configs(site \\ nil)
+  @spec configs(term()) :: {:ok, [Config.t()]} | {:error, term()}
+  def configs(where) do
+    with {:ok, query} <- Data.Filters.where(all_configs(), Data.Filters.ExtensionConfigs, where),
+         do: {:ok, Repo.all(query)}
+  end
 
-  def configs(nil),
-    do:
-      Repo.all(from(c in Config, order_by: [desc: c.published_at, desc: c.version, asc: c.site]))
+  @doc "Every published version, newest first, unfiltered (`mix aq.world`'s count)."
+  @spec configs() :: [Config.t()]
+  def configs, do: Repo.all(all_configs())
 
-  def configs(site),
-    do: Repo.all(from(c in Config, where: c.site == ^site(site), order_by: [desc: c.version]))
+  defp all_configs,
+    do: from(c in Config, order_by: [desc: c.version, desc: c.published_at, asc: c.site])
 
   @doc """
   Publishes `body` as the site's next version, unless it is the live one's

@@ -1,6 +1,6 @@
 defmodule Data.Notifications.PushSubscription do
   @moduledoc """
-  A browser that takes Web Push for a person (AQ-08 §5, QP8-14; mCart's):
+  A browser that takes Web Push for a person (AQ-08 §5, QP8-14; tCart's):
   the endpoint and keys, the app it was made on, when it was last used and
   last failed.
   """

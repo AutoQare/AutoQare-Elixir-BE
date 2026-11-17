@@ -10,7 +10,7 @@ defmodule Data.Repo.Migrations.CreateTasks do
   rather than a participant row, so a customer who has not signed in yet
   can still be given one.
 
-  The six states are mCart's; Archived is a flag (`archived_at`), not a
+  The six states are tCart's; Archived is a flag (`archived_at`), not a
   state (QP2-12). Each state's own columns are held to it by a CHECK:
   `held_at` with On hold, `done_at` with Done, `closed_at` and a reason with
   Closed, a stage only In progress. `lead_id` (AQ-04A §5.4) is the lead a
@@ -65,7 +65,7 @@ defmodule Data.Repo.Migrations.CreateTasks do
       )
     )
 
-    # Null is *normal*: "not triaged" is not a rung of its own (mCart).
+    # Null is *normal*: "not triaged" is not a rung of its own (tCart).
     create(
       constraint(:tasks, :priority_known,
         check: "priority IS NULL OR priority IN ('low','high','urgent')"

@@ -35,8 +35,10 @@ defmodule Core.Standard do
   back through its verb.
 
   **An organisation that exists already must have Super Admin as its
-  system admin** (there is one, QP4a-21); otherwise it stops with words
-  saying how to fix it, and makes nothing.
+  system admin** (there is one, QP4a-21), or an open bootstrap invitation
+  for Super Admin, which it accepts (a deploy bootstraps before it seeds the
+  set, `Autoqare.Release`); otherwise it stops with words saying how to fix
+  it, and makes nothing.
 
   Callers: `mix aq.seed_standard` (dev only, `password123`, last of
   `mix ecto.reset`'s seeds) and the end of `mix aq.world`. The suite passes
@@ -53,6 +55,7 @@ defmodule Core.Standard do
   alias Core.Organisation.Teams
   alias Core.Standard.Pool
   alias Data.Accounts
+  alias Data.Invitations, as: InvitationRows
   alias Data.Organisations
   alias Data.Scope
 
@@ -178,7 +181,7 @@ defmodule Core.Standard do
   defp admin(%Scope{} = scope, run, acc) do
     case Organisations.the_one() do
       nil -> bootstrap(scope, run, acc)
-      organisation -> standing(scope, organisation, acc)
+      organisation -> standing(scope, organisation, run, acc)
     end
   end
 
@@ -196,11 +199,31 @@ defmodule Core.Standard do
     end
   end
 
-  defp standing(%Scope{}, organisation, acc) do
+  defp standing(%Scope{}, organisation, run, acc) do
     case Organisations.the_admin(organisation.id) do
       %{user: %{email: @admin_email} = user} -> {:ok, acting(user), acc |> kept() |> kept()}
       %{user: user} -> {:error, wrong_admin(organisation, user.email)}
-      nil -> {:error, wrong_admin(organisation, nil)}
+      nil -> claim(organisation, run, acc)
+    end
+  end
+
+  # Bootstrapped for Super Admin and not yet accepted (`mix aq.bootstrap` or
+  # `Autoqare.Release.bootstrap/3` first, as a deploy runs them): accepted
+  # here, as Super Admin would. An open invitation for anybody else stays
+  # theirs, and the set stops with words.
+  defp claim(organisation, run, acc) do
+    case InvitationRows.open_for(organisation.id, :admin, @admin_email, nil) do
+      nil ->
+        {:error, wrong_admin(organisation, nil)}
+
+      invitation ->
+        case accept(invitation, %{email: @admin_email, name: @admin_name}, run) do
+          {:ok, user} ->
+            {:ok, acting(user), acc |> kept() |> made("system admin #{@admin_email}")}
+
+          {:error, reason} ->
+            {:error, {:admin, reason}}
+        end
     end
   end
 
@@ -298,7 +321,7 @@ defmodule Core.Standard do
   end
 
   defp customer_row(%Scope{} = admin, seat, person, run, acc) do
-    {:ok, found} = Customers.list(admin, %{"q" => person.email})
+    {:ok, found} = Customers.list(admin, %{"$where" => %{"q" => %{"$ILIKE" => person.email}}})
 
     case Enum.find(found, &(&1.email == person.email)) do
       %{} = customer ->

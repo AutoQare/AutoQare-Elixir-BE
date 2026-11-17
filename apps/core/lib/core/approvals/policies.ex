@@ -2,7 +2,7 @@ defmodule Core.Approvals.Policies do
   @moduledoc """
   A customer's approval rules (AQ-07 §8, QP7-16; PLAN Q12): **Q12's
   defaults are code**, and only a team lead's overrides are stored
-  (`customer_approval_policies`), as mCart keeps its settings 1:1 with
+  (`customer_approval_policies`), as tCart keeps its settings 1:1 with
   defaults.
 
   | Kind | Needs | Rule |

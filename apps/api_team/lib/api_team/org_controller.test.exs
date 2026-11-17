@@ -68,10 +68,86 @@ defmodule ApiTeam.OrgControllerTest do
              "before" => %{"name" => _old}
            } = event
 
-    conn = call(admin, :get, "/v1/org/audit?subject_kind=teams&subject_id=#{team.id}")
+    conn =
+      call(
+        admin,
+        :get,
+        "/v1/org/audit?$where[subject_kind][$EQUAL]=teams&$where[subject_id][$EQUAL]=#{team.id}"
+      )
+
     assert length(body(conn)["items"]) == 1
+
+    conn =
+      call(
+        admin,
+        :get,
+        "/v1/org/audit?$where[occurred_at][$CAST_TO_DATE_GTE]=2000-01-01&$where[occurred_at][$CAST_TO_DATE_LTE]=2999-12-31"
+      )
+
+    assert body(conn)["items"] != []
+
+    conn = call(admin, :get, "/v1/org/audit?$where[occurred_at][$CAST_TO_DATE_LTE]=2000-01-01")
+    assert body(conn)["items"] == []
+
+    refused = call(admin, :get, "/v1/org/audit?$where[occurred_at][$CAST_TO_DATE_GTE]=yesterday")
+    assert refused.status == 422
+    assert body(refused)["error"]["code"] == "invalid_filter"
+    assert Map.keys(body(refused)["error"]["details"]) == ["occurred_at"]
+
+    assert body(call(admin, :get, "/v1/org/audit?$where[via][$EQUAL]=web"))["error"]["code"] ==
+             "invalid_filter"
+
     assert call(lead, :get, "/v1/org/audit").status == 403
     assert call(member, :get, "/v1/org/audit").status == 403
     assert call(admin, :get, "/v1/org/audit?cursor=garbage").status == 422
+  end
+
+  test "the emails' footer: help_email and postal_address set, read at the top and in settings, cleared with null",
+       %{admin: admin} do
+    set =
+      call(admin, :put, "/v1/org/settings", %{
+        help_email: " help@regbits.example ",
+        postal_address: "12 Mall Road, Lahore"
+      })
+
+    assert set.status == 200
+
+    assert %{
+             "help_email" => "help@regbits.example",
+             "postal_address" => "12 Mall Road, Lahore",
+             "settings" => %{"help_email" => "help@regbits.example"}
+           } = body(set)
+
+    # AQ-10B §11.4's names for the same routes.
+    assert %{"help_email" => "help@regbits.example"} = body(call(admin, :get, "/v1/organisation"))
+
+    cleared = call(admin, :patch, "/v1/organisation", %{help_email: nil, postal_address: nil})
+    assert cleared.status == 200
+    assert %{"help_email" => nil, "postal_address" => nil} = body(cleared)
+
+    bad = call(admin, :put, "/v1/org/settings", %{help_email: "not an address"})
+    assert bad.status == 422
+    assert body(bad)["error"]["details"]["help_email"]
+  end
+
+  test "working days (AQ-11 §7.4): Monday to Friday by default, set as ISO weekdays, checked",
+       %{admin: admin, lead: lead} do
+    assert %{
+             "working_days" => [1, 2, 3, 4, 5],
+             "settings" => %{"working_days" => [1, 2, 3, 4, 5]}
+           } =
+             body(call(admin, :get, "/v1/org"))
+
+    set = call(admin, :put, "/v1/org/settings", %{working_days: [6, 1, 2, 3, 4, 5]})
+    assert set.status == 200
+    assert %{"working_days" => [1, 2, 3, 4, 5, 6]} = body(set)
+
+    for bad <- [[0], [8], [1, 1]] do
+      refused = call(admin, :put, "/v1/org/settings", %{working_days: bad})
+      assert refused.status == 422
+      assert body(refused)["error"]["details"]["working_days"]
+    end
+
+    assert code(call(lead, :put, "/v1/org/settings", %{working_days: [1]})) == "forbidden"
   end
 end

@@ -33,4 +33,21 @@ defmodule Core.Storage.ContentTest do
     assert Content.matches?("## heading", "text/plain")
     refute Content.matches?(<<0, 0>>, "text/plain")
   end
+
+  # AQ-12 §11.4: an import's spreadsheet and CSV.
+  test "a workbook is told from a document by the archive's own list; a CSV is text" do
+    zip = fn names ->
+      {:ok, {_name, bytes}} =
+        :zip.create(~c"x.zip", Enum.map(names, &{String.to_charlist(&1), "x"}), [:memory])
+
+      bytes
+    end
+
+    assert Content.detect(zip.(["[Content_Types].xml", "xl/workbook.xml"])) == Content.xlsx()
+    assert Content.detect(zip.(["[Content_Types].xml", "word/document.xml"])) == @docx
+    assert Content.matches?(zip.(["[Content_Types].xml", "xl/workbook.xml"]), Content.xlsx())
+    refute Content.matches?(zip.(["[Content_Types].xml", "word/document.xml"]), Content.xlsx())
+    assert Content.matches?("Date,Job link\n1,2\n", "text/csv")
+    assert Content.matches?("Date,Job link\n1,2\n", "application/vnd.ms-excel")
+  end
 end

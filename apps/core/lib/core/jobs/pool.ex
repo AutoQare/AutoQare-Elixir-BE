@@ -1,67 +1,66 @@
 defmodule Core.Jobs.Pool do
   @moduledoc """
-  `GET /jobs?team_id&…` (AQ-03 §7.1, AQ-03B §5.1): **one team's pool**, the
-  list's parameters read and checked, a keyset page of 50 rows, and an
+  `GET /jobs?team_id&$where&$order&currency&cursor` (AQ-03 §7.1, AQ-03B
+  §5.1, AQ-11B §11.4): **one team's pool**, a keyset page of 50 rows and an
   opaque cursor. `team_id` is required (422 without it; 404 for a team the
   caller is not in, unless an admin); a member whose team's `peer_jobs` is
-  `hidden` lists only their own jobs. Every other parameter is optional; a
-  value off its vocabulary is a field error (422), never a silent "all".
+  `hidden` lists only their own jobs.
 
   | Parameter | Rule |
   |---|---|
   | `team_id` | required: the team whose pool this is |
-  | `q` | title or company name, substring or trigram, case- and accent-insensitive |
-  | `source` `engagement` `workplace` `remote_scope` `status` | comma-separated keys, any of them |
-  | `country` | `allowed_countries` holds it, or the job is remote worldwide |
-  | `skills` | comma-separated skill ids, any of them |
-  | `money_min_minor` + `currency` + `period` | QP3-9; all three or none. `currency` alone is the money sort's |
-  | `posted_within` | 1 · 3 · 7 · 14 · 30 days: `posted_on`, else `first_seen_at` |
-  | `archived` | `true`: only archived; otherwise only live |
-  | `suggested_for` | a profile id: jobs scoring ≥ 70 for it and not dismissed, best first |
-  | `has_leads` | `true` · `false`: a job with a lead, or none (AQ-04A §8.1) |
-  | `not_applied_with` | a profile id: no lead past To do for it on the posting, in any team |
-  | `sort` | `newest` (default) · `posted` · `money` (needs `currency`); ties by id |
+  | `$where` | `Data.Filters.Jobs`' fields (`source` · `engagement` · `workplace` · `remote_scope` · `status`, `q`, `country`, `skills`, `money`, `posted_within`, `archived`, `has_leads`, `not_applied_with`, `suggested_for`); a field, operator or value it doesn't take is the 422 `invalid_filter` |
+  | `$order` | `Data.Filters.JobsSort`' one field: `first_seen_at` (the default) · `posted_on` · `money`, each `$DESC`; ties by id |
+  | `currency` | the money sort's currency when no money filter names one (a switch, not a filter: other currencies sort last) |
   | `cursor` | the last page's `next_cursor` |
+
+  **`suggested_for` stays in memory**: the jobs the rest of `$where`
+  matches are scored on read (`Core.Jobs.Suggest`), those at 70 and above
+  for the profile and not dismissed kept, best first — the score has no
+  SQL form. `not_applied_with` and `suggested_for` name a profile the
+  caller must be able to read (404 otherwise), checked here before the
+  filter runs.
   """
 
   alias Core.Access
   alias Core.Access.Jobs, as: JobAccess
   alias Core.Jobs
   alias Core.Jobs.{Sheet, Suggest}
-  alias Data.Companies.Company
+  alias Data.Filters
+  alias Data.Filters.JobsSort
   alias Data.JobList
   alias Data.JobParts
   alias Data.Leads, as: LeadStore
   alias Data.Profiles
   alias Data.Scope
-  alias Data.Vocabulary
 
   @page 50
-  @within ~w(1 3 7 14 30)
-  @lists [
-    {"source", :sources, Vocabulary.job_sources()},
-    {"engagement", :engagements, Vocabulary.engagement_types()},
-    {"workplace", :workplaces, Vocabulary.workplace_types()},
-    {"remote_scope", :remote_scopes, Vocabulary.remote_scopes()},
-    {"status", :statuses, Vocabulary.job_statuses()}
-  ]
 
   @doc "A page: `{:ok, %{items: [row], next_cursor}}`."
   @spec list(Scope.t(), map(), DateTime.t()) :: {:ok, map()} | {:error, term()}
   def list(%Scope{} = scope, params, %DateTime{} = now) do
     params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
+    where = params["$where"]
 
     with :ok <- Access.why_not(scope, :read, {:job, %{}}),
          {:ok, team} <- Jobs.team(scope, params),
-         {:ok, filters} <- filters(params, now),
-         {:ok, filters} <- lead_filters(scope, filters, params),
-         filters = Map.put(filters, :visible_to, visible_to(scope, team.id)),
-         {:ok, sort} <- sort(params, filters),
-         {:ok, profile} <- suggested_for(scope, params["suggested_for"]),
+         {:ok, profile} <- readable_profile(scope, profile_id(where, "suggested_for")),
+         {:ok, applied} <- applied_keys(scope, profile_id(where, "not_applied_with")),
+         {:ok, pairs} <- Filters.order(JobsSort, params["$order"]),
+         {:ok, money_sort} <- money_sort(where, params["currency"]),
+         {:ok, sort} <- sort(pairs, money_sort),
          sort = if(profile, do: :suggested, else: sort),
-         {:ok, cursor} <- decode(params["cursor"], sort) do
+         {:ok, cursor} <- decode(params["cursor"], sort),
+         context =
+           Filters.context(scope,
+             now: now,
+             team_id: team.id,
+             suggested_for: profile && profile.id,
+             applied_keys: applied
+           ),
+         {:ok, query} <- JobList.matching(team.id, visible_to(scope, team.id), where, context) do
       profiles = Sheet.profiles(scope, team.id)
-      {jobs, next} = page(team.id, filters, sort, cursor, profile, now)
+      {jobs, next} = page(query, sort, money_sort, cursor, profile, now)
       best = Sheet.best(jobs, profiles, now)
       {:ok, %{items: Enum.map(jobs, &Sheet.row(&1, Map.get(best, &1.id))), next_cursor: next}}
     end
@@ -75,12 +74,12 @@ defmodule Core.Jobs.Pool do
     end
   end
 
-  defp page(team_id, filters, :suggested, cursor, profile, now) do
+  defp page(query, :suggested, _money_sort, cursor, profile, now) do
     dismissed = MapSet.new(JobParts.dismissed_jobs(profile.id))
 
     scored =
-      team_id
-      |> JobList.all(filters)
+      query
+      |> JobList.all()
       |> Enum.reject(&MapSet.member?(dismissed, &1.id))
       |> Enum.map(&{Suggest.score(profile, &1, now).score, &1})
       |> Enum.filter(fn {score, _job} -> score >= Suggest.threshold() end)
@@ -97,14 +96,14 @@ defmodule Core.Jobs.Pool do
     {Enum.map(rows, &elem(&1, 1)), next}
   end
 
-  defp page(team_id, filters, sort, cursor, _profile, _now) do
-    jobs = JobList.page(team_id, filters, sort, cursor, @page)
+  defp page(query, sort, money_sort, cursor, _profile, _now) do
+    jobs = JobList.page(query, sort, money_sort, cursor, @page)
     {rows, more} = Enum.split(jobs, @page)
 
     next =
       if more == [],
         do: nil,
-        else: encode(sort, key(sort, List.last(rows), filters), List.last(rows).id)
+        else: encode(sort, key(sort, List.last(rows), money_sort), List.last(rows).id)
 
     {rows, next}
   end
@@ -117,172 +116,67 @@ defmodule Core.Jobs.Pool do
   defp after?({score, id}, {c_score, c_id}),
     do: score < c_score or (score == c_score and reverse(id) > reverse(c_id))
 
-  defp key(:newest, job, _filters), do: job.first_seen_at
-  defp key(:posted, job, _filters), do: job.posted_on
-  defp key(:money, job, filters), do: JobList.money_key(job, filters.money_sort)
+  defp key(:newest, job, _money_sort), do: job.first_seen_at
+  defp key(:posted, job, _money_sort), do: job.posted_on
+  defp key(:money, job, money_sort), do: JobList.money_key(job, money_sort)
 
   # ── Parameters ──────────────────────────────────────────────────────────────
 
-  defp filters(params, now) do
-    steps = [
-      &lists(&1, params),
-      &country(&1, params["country"]),
-      &skills(&1, params["skills"]),
-      &money(&1, params),
-      &posted_within(&1, params["posted_within"], now)
-    ]
+  # The sort: one `$order` field; money needs a currency.
+  defp sort([], _money_sort), do: {:ok, :newest}
+  defp sort([{"first_seen_at", _dir}], _money_sort), do: {:ok, :newest}
+  defp sort([{"posted_on", _dir}], _money_sort), do: {:ok, :posted}
+  defp sort([{"money", _dir}], nil), do: invalid("currency", "is needed to sort by money")
+  defp sort([{"money", _dir}], _money_sort), do: {:ok, :money}
 
-    base = %{
-      q: Company.normalize(Utils.presence(params["q"])),
-      archived: params["archived"] in [true, "true"]
-    }
+  defp sort(_pairs, _money_sort),
+    do: {:error, {:invalid_filter, %{"$order" => ["sorts by one field"]}}}
 
-    Enum.reduce_while(steps, {:ok, base}, fn step, {:ok, acc} ->
-      case step.(acc) do
-        {:ok, acc} -> {:cont, {:ok, acc}}
-        error -> {:halt, error}
-      end
-    end)
-  end
-
-  defp lists(acc, params) do
-    Enum.reduce_while(@lists, {:ok, acc}, fn {param, key, allowed}, {:ok, acc} ->
-      values = split(params[param])
-
-      if Enum.all?(values, &(&1 in allowed)),
-        do: {:cont, {:ok, Map.put(acc, key, Enum.map(values, &String.to_existing_atom/1))}},
-        else: {:halt, invalid(param, "has a value that is not one of the list")}
-    end)
-  end
-
-  defp country(acc, nil), do: {:ok, acc}
-
-  defp country(acc, code) do
-    code = code |> to_string() |> String.trim() |> String.upcase()
-
-    if code =~ ~r/^[A-Z]{2}$/,
-      do: {:ok, Map.put(acc, :country, code)},
-      else: invalid("country", "is not an ISO country code")
-  end
-
-  defp skills(acc, value) do
-    ids = Enum.map(split(value), &Ecto.UUID.cast/1)
-
-    if Enum.all?(ids, &match?({:ok, _id}, &1)),
-      do: {:ok, Map.put(acc, :skill_ids, Enum.map(ids, &elem(&1, 1)))},
-      else: invalid("skills", "has an id that is not a skill's")
-  end
-
-  defp money(acc, params) do
-    min = Utils.presence(to_text(params["money_min_minor"]))
-
-    currency =
-      params["currency"] |> to_text() |> Utils.presence() |> then(&(&1 && String.upcase(&1)))
-
-    period = Utils.presence(to_text(params["period"]))
-
-    with :ok <- money_shape(currency, period) do
-      money_filter(acc, min, currency, period)
-    end
-  end
-
-  defp money_shape(currency, period) do
-    cond do
-      currency && not (currency =~ ~r/^[A-Z]{3}$/) ->
-        invalid("currency", "is not an ISO currency code")
-
-      period && period not in Vocabulary.comp_periods() ->
-        invalid("period", "is not one of the periods")
-
-      true ->
-        :ok
-    end
-  end
-
-  # `currency` alone is the money sort's; the filter wants all three.
-  defp money_filter(acc, nil, currency, nil),
-    do: {:ok, Map.put(acc, :money_sort, currency && %{currency: currency, project?: false})}
-
-  defp money_filter(acc, min, currency, period)
-       when is_binary(min) and is_binary(currency) and is_binary(period) do
-    with {:ok, min} <- minor(min) do
-      period = String.to_existing_atom(period)
-
-      {:ok,
-       acc
-       |> Map.put(:money, %{min: min, currency: currency, period: period})
-       |> Map.put(:money_sort, %{currency: currency, project?: period == :project})}
-    end
-  end
-
-  defp money_filter(_acc, min, currency, period) do
-    missing = for {k, nil} <- [money_min_minor: min, currency: currency, period: period], do: k
-    {:error, {:invalid, Map.new(missing, &{to_string(&1), ["is needed with the money filter"]})}}
-  end
-
-  defp minor(text) do
-    case Integer.parse(text) do
-      {n, ""} when n >= 0 -> {:ok, n}
-      _other -> invalid("money_min_minor", "is not a whole amount in minor units")
-    end
-  end
-
-  defp posted_within(acc, nil, _now), do: {:ok, acc}
-
-  defp posted_within(acc, days, now) do
-    days = to_text(days)
-
-    if days in @within do
-      since = DateTime.add(now, -String.to_integer(days) * 86_400, :second)
-      {:ok, Map.put(acc, :posted_since, {DateTime.to_date(since), since})}
+  # The money sort's currency: the money filter's (a project budget sorts
+  # only projects), else the `currency` switch's. A bad money filter is
+  # `Data.Filters`' 422, so here it only gives no currency.
+  defp money_sort(where, currency) do
+    with %{"$GTE" => %{} = value} <- Filters.value(where, "money"),
+         {:ok, money} <- Filters.Jobs.money(value) do
+      {:ok, %{currency: money.currency, project?: money.period == :project}}
     else
-      invalid("posted_within", "is one of 1, 3, 7, 14 or 30 days")
+      _no_filter -> currency_switch(currency)
     end
   end
 
-  defp sort(params, filters) do
-    case params["sort"] do
-      nil ->
-        {:ok, :newest}
+  defp currency_switch(nil), do: {:ok, nil}
+  defp currency_switch(""), do: {:ok, nil}
 
-      "newest" ->
-        {:ok, :newest}
-
-      "posted" ->
-        {:ok, :posted}
-
-      "money" ->
-        if filters.money_sort,
-          do: {:ok, :money},
-          else: invalid("currency", "is needed to sort by money")
-
-      _other ->
-        invalid("sort", "is newest, posted or money")
+  defp currency_switch(value) do
+    case Filters.Jobs.currency(value) do
+      {:ok, code} -> {:ok, %{currency: code, project?: false}}
+      :error -> invalid("currency", "is not an ISO currency code")
     end
   end
 
-  defp lead_filters(scope, filters, params) do
-    with {:ok, has} <- has_leads(params["has_leads"]),
-         {:ok, keys} <- not_applied(scope, params["not_applied_with"]) do
-      {:ok, filters |> Map.put(:has_leads, has) |> Map.put(:not_applied_keys, keys)}
+  # The profile id a `$where` field names at its top (`{"$EQUAL": id}` or
+  # bare), or nil; anything else `Data.Filters` refuses.
+  defp profile_id(where, field) do
+    case Filters.value(where, field) do
+      %{"$EQUAL" => id} when is_binary(id) and id != "" -> id
+      id when is_binary(id) and id != "" -> id
+      _none -> nil
     end
   end
 
-  defp has_leads(nil), do: {:ok, nil}
-  defp has_leads(value) when value in [true, "true"], do: {:ok, true}
-  defp has_leads(value) when value in [false, "false"], do: {:ok, false}
-  defp has_leads(_value), do: invalid("has_leads", "is true or false")
+  # The keys the profile applied on, in any team, for `not_applied_with`.
+  defp applied_keys(_scope, nil), do: {:ok, %{}}
 
-  defp not_applied(_scope, nil), do: {:ok, nil}
-
-  defp not_applied(scope, id) do
-    with {:ok, profile} <- suggested_for(scope, id),
-         do: {:ok, LeadStore.applied_keys(Scope.organisation_id(scope), profile.id)}
+  defp applied_keys(scope, id) do
+    with {:ok, profile} <- readable_profile(scope, id),
+         do:
+           {:ok,
+            %{profile.id => LeadStore.applied_keys(Scope.organisation_id(scope), profile.id)}}
   end
 
-  defp suggested_for(_scope, nil), do: {:ok, nil}
+  defp readable_profile(_scope, nil), do: {:ok, nil}
 
-  defp suggested_for(scope, id) do
+  defp readable_profile(scope, id) do
     with %{} = profile <- Profiles.get(id) || {:error, :not_found},
          true <-
            profile.customer.organisation_id == Scope.organisation_id(scope) ||
@@ -331,18 +225,6 @@ defmodule Core.Jobs.Pool do
 
   # ── Helpers ─────────────────────────────────────────────────────────────────
 
-  defp split(nil), do: []
-  defp split(value) when is_list(value), do: Enum.flat_map(value, &split/1)
-
-  defp split(value),
-    do:
-      value
-      |> to_text()
-      |> String.split(",", trim: true)
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-
-  defp to_text(nil), do: nil
   defp to_text(value) when is_binary(value), do: value
   defp to_text(value), do: to_string(value)
 

@@ -1,0 +1,12 @@
+<%= @org_name %>
+
+<%= @inner %>
+
+--
+Why you got this: <%= @why %>
+<%= if @manage_url do %>Manage notifications: <%= @manage_url %>
+<% end %><%= if @unsubscribe_url do %>Unsubscribe from <%= @group_label %>: <%= @unsubscribe_url %>
+<% end %><%= if @locked_note do %><%= @locked_note %>
+<% end %><%= if @help_email do %>Help: <%= @help_email %>
+<% end %><%= if @postal_address do %><%= @postal_address %>
+<% end %>Sent by AutoQare for <%= @org_name %>

@@ -107,7 +107,7 @@ defmodule Core.Notifications.DeliveriesTest do
     {:ok, bell} = ensure(c.scope, c.fiza.id, "tasks.completed")
     assert rows(bell) == []
 
-    {:ok, digest_only} = ensure(c.scope, c.fiza.id, "tasks.overdue")
+    {:ok, digest_only} = ensure(c.scope, c.fiza.id, "tasks.due_soon")
     assert rows(digest_only) == []
     assert all_enqueued(worker: @worker) == []
 
@@ -140,6 +140,44 @@ defmodule Core.Notifications.DeliveriesTest do
     assert rows(digest) == [{:email, @now}]
   end
 
+  # AQ-10 §11.4: the seam's two more attrs, popped like `:ics`.
+  test "only_channels narrows the kind's channels (the bell stays); nothing else changes", c do
+    push_subscription_fixture(c.fiza)
+    device_fixture(scope_for(c.fiza))
+
+    # AQ-10B §5.7 B1: email is offered, off unless a watch asks for it.
+    {:ok, all} = ensure(c.scope, c.fiza.id, "behaviour.watch_fired")
+    assert rows(all) == [{:push, @now}, {:extension, @now}]
+
+    {:ok, asked} =
+      ensure(c.scope, c.fiza.id, "behaviour.watch_fired", @now, %{
+        only_channels: ["push", "email", "extension"]
+      })
+
+    assert rows(asked) == [
+             {:push, @now},
+             {:email, DateTime.add(@now, 600, :second)},
+             {:extension, @now}
+           ]
+
+    {:ok, narrowed} =
+      ensure(c.scope, c.fiza.id, "behaviour.watch_fired", @now, %{only_channels: ["extension"]})
+
+    assert rows(narrowed) == [{:extension, @now}]
+    assert Repo.get(Data.Notifications.Notification, narrowed.id)
+
+    {:ok, bell} = ensure(c.scope, c.fiza.id, "behaviour.watch_fired", @now, %{only_channels: []})
+    assert rows(bell) == [] and Repo.get(Data.Notifications.Notification, bell.id)
+
+    # A person's switch still applies inside the narrowed set.
+    preference_fixture(c.fiza, "behaviour", %{push: false})
+
+    {:ok, off} =
+      ensure(c.scope, c.fiza.id, "behaviour.watch_fired", @now, %{only_channels: ["push"]})
+
+    assert rows(off) == []
+  end
+
   describe "quiet hours (22:00–08:00 in Karachi)" do
     # 23:00 in Karachi; the window ends at 08:00 there, 03:00 UTC.
     @night ~U[2026-11-12 18:00:00.000000Z]
@@ -157,13 +195,16 @@ defmodule Core.Notifications.DeliveriesTest do
       :ok
     end
 
-    test "push, email and pop-ups are held to the window's end; the bell row is there at once; a reminder passes",
+    test "push and pop-ups are held to the window's end, never email; the bell row is there at once; a reminder passes",
          c do
       {:ok, n} = ensure(c.scope, c.fiza.id, "approvals.requested", @night)
       assert Repo.get(Data.Notifications.Notification, n.id)
+      wait = DateTime.add(@night, 600, :second)
 
-      assert [%{deferred: true, deliver_after: @opens}, %{deferred: true, deliver_after: @opens}] =
-               Deliveries.for_notification(n.id)
+      assert [
+               %{channel: :push, deferred: true, deliver_after: @opens},
+               %{channel: :email, deferred: false, deliver_after: ^wait}
+             ] = Deliveries.for_notification(n.id)
 
       {:ok, reply} = ensure(c.scope, c.fiza.id, "conversations.reply_received", @night)
       assert Enum.all?(Deliveries.for_notification(reply.id), &(&1.deliver_after == @opens))
@@ -171,10 +212,31 @@ defmodule Core.Notifications.DeliveriesTest do
 
       {:ok, reminder} = ensure(c.scope, c.fiza.id, "meetings.reminder", @night)
 
-      assert [%{channel: :push, deferred: false, deliver_after: @night}] =
-               Deliveries.for_notification(reminder.id)
+      # AQ-10B §11.4: the reminder pops up in the extension too.
+      assert [
+               %{channel: :push, deferred: false, deliver_after: @night},
+               %{channel: :extension, deferred: false, deliver_after: @night}
+             ] = Deliveries.for_notification(reminder.id)
 
       assert [_job] = all_enqueued(worker: @worker)
+    end
+
+    test "passes_quiet_hours: true goes now, false holds even a kind that passes", c do
+      {:ok, now} =
+        ensure(c.scope, c.fiza.id, "behaviour.watch_fired", @night, %{passes_quiet_hours: true})
+
+      assert Enum.all?(Deliveries.for_notification(now.id), &(not &1.deferred))
+
+      {:ok, held} = ensure(c.scope, c.fiza.id, "behaviour.watch_fired", @night)
+      assert Enum.all?(Deliveries.for_notification(held.id), & &1.deferred)
+
+      {:ok, reminder} =
+        ensure(c.scope, c.fiza.id, "meetings.reminder", @night, %{passes_quiet_hours: false})
+
+      assert Enum.all?(
+               Deliveries.for_notification(reminder.id),
+               &(&1.deferred and &1.deliver_after == @opens)
+             )
     end
 
     test "PUT /me/settings with another window re-plans the held rows; off lets them go now", c do
@@ -189,10 +251,10 @@ defmodule Core.Notifications.DeliveriesTest do
           later
         )
 
-      assert Enum.all?(
-               Deliveries.for_notification(n.id),
-               &(&1.deferred and &1.deliver_after == ~U[2026-11-12 18:30:00.000000Z])
-             )
+      assert [
+               %{channel: :push, deferred: true, deliver_after: ~U[2026-11-12 18:30:00.000000Z]},
+               %{channel: :email, deferred: false}
+             ] = Deliveries.for_notification(n.id)
 
       {:ok, _settings} =
         Core.Accounts.put_settings(
@@ -209,6 +271,35 @@ defmodule Core.Notifications.DeliveriesTest do
 
       assert email_at == DateTime.add(@night, 600, :second)
       assert [_job] = all_enqueued(worker: @worker)
+    end
+  end
+
+  describe "AQ-10B §11.4" do
+    test "a second push about the same task within 10 minutes is folded; the bell keeps both",
+         c do
+      push_subscription_fixture(c.fiza)
+      task = task_fixture(scope_for(c.fiza), title: "Folded")
+
+      {:ok, first} = ensure(c.scope, c.fiza.id, "tasks.commented", @now, %{task_id: task.id})
+
+      {:ok, second} =
+        ensure(c.scope, c.fiza.id, "tasks.commented", DateTime.add(@now, 300, :second), %{
+          task_id: task.id
+        })
+
+      {:ok, third} =
+        ensure(c.scope, c.fiza.id, "tasks.commented", DateTime.add(@now, 660, :second), %{
+          task_id: task.id
+        })
+
+      assert [%{state: :pending, skip_reason: nil}] = Deliveries.for_notification(first.id)
+      assert [%{state: :skipped, skip_reason: :folded}] = Deliveries.for_notification(second.id)
+      assert [%{state: :pending, skip_reason: nil}] = Deliveries.for_notification(third.id)
+    end
+
+    test "a customer's email goes at once", c do
+      {:ok, n} = ensure(c.scope, c.customer.user_id, "tasks.commented")
+      assert [%{channel: :email, deliver_after: @now}] = Deliveries.for_notification(n.id)
     end
   end
 end

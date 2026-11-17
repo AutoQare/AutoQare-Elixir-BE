@@ -12,7 +12,8 @@ defmodule ApiTeam.LeadControllerTest do
             cover_letter_md created_by customer cv expectation finished_at held_at hold_reason
             hold_until_on id is_pinned job last_activity_at outcome outcome_note owner pipeline
             priority profile progress recent resume_due stage state team follow_up labels next
-            notes_count quiet tasks archive_reason recruiters tabs banner)
+            notes_count quiet tasks archive_reason recruiters tabs banner watching watchers_count
+            muted)
   @can ~w(apply apply_again archive assign cv edit finish hold move pin pipeline reopen resume share
           unarchive unpin)
 
@@ -170,6 +171,27 @@ defmodule ApiTeam.LeadControllerTest do
 
     assert expanded["pipeline"]["key"] == "freelance"
     assert call(c.fiza, :get, "/v1/leads/board").status == 422
+
+    narrowed =
+      body(
+        call(
+          c.fiza,
+          :get,
+          "/v1/leads/board?team_id=#{c.backend.id}&$where[state][$IN][]=done" <>
+            "&$where[q][$ILIKE]=%25backend%25"
+        )
+      )
+
+    assert Enum.all?(narrowed["columns"], &(&1["cards"] == []))
+
+    refused =
+      call(c.fiza, :get, "/v1/leads/board?team_id=#{c.backend.id}&$where[quiet][$EQUAL]=7")
+
+    assert refused.status == 422 and code(refused) == "invalid_filter"
+
+    assert body(refused)["error"]["details"] == %{
+             "quiet" => ["has a value this filter can't take"]
+           }
   end
 
   test "share links on a lead, opened as subject lead", c do

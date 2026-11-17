@@ -154,6 +154,11 @@ defmodule Core.Approvals.Act do
       pending = Store.reload(pending)
       ledger? = requested(scope, pending, now)
 
+      # AQ-10B §11.4: emailed only when it needs a decision again.
+      new_decision? =
+        a.state == :changes_requested or
+          Enum.any?(a.decisions, &(&1.version_number == a.version_count))
+
       {:ok, _audit} =
         Audit.record(scope, "revised", pending,
           before: Approvals.snapshot(a),
@@ -165,7 +170,10 @@ defmodule Core.Approvals.Act do
       :ok = Reminders.plan(pending, now)
 
       {:ok, pending,
-       [Notices.requested(scope, pending), Realtime.approval_changed(pending, ledger: ledger?)]}
+       [
+         Notices.requested(scope, pending, new_decision?),
+         Realtime.approval_changed(pending, ledger: ledger?)
+       ]}
     end
   end
 
@@ -203,7 +211,9 @@ defmodule Core.Approvals.Act do
         )
 
       :ok = Reminders.drop(a.id)
-      {:ok, gone, Realtime.approval_changed(gone, ledger: ledger?)}
+      # AQ-10B §5.4 P6: a submitted one tells its open slots' people.
+      told = if a.submitted_at, do: Notices.withdrawn(scope, a), else: []
+      {:ok, gone, [told, Realtime.approval_changed(gone, ledger: ledger?)]}
     end
   end
 
@@ -251,7 +261,8 @@ defmodule Core.Approvals.Act do
           now: now
         )
 
-      {:ok, done, Realtime.approval_changed(done)}
+      # AQ-10B §5.4 P7: the customer told their approved reply went.
+      {:ok, done, [Notices.sent(scope, done), Realtime.approval_changed(done)]}
     end
   end
 

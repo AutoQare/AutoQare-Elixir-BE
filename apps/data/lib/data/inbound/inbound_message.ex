@@ -1,7 +1,8 @@
 defmodule Data.Inbound.InboundMessage do
   @moduledoc """
   One delivery the intake accepted (AQ-09 §5, QP9-8): who delivered it,
-  to which address, what became of it. No body.
+  to which address, what became of it. No body. AQ-12: `alert_jobs`, the
+  pool jobs a job-alert email gave (null for any other mail).
   """
 
   use Data.Schema
@@ -24,6 +25,7 @@ defmodule Data.Inbound.InboundMessage do
     field(:outcome, Ecto.Enum, values: @outcomes)
     field(:bytes, :integer, default: 0)
     field(:received_at, :utc_datetime_usec)
+    field(:alert_jobs, :integer)
 
     belongs_to(:organisation, Organisation)
     belongs_to(:channel, Channel)
@@ -42,13 +44,15 @@ defmodule Data.Inbound.InboundMessage do
       :outcome,
       :message_id,
       :bytes,
-      :received_at
+      :received_at,
+      :alert_jobs
     ])
     |> update_change(:to_address, &(&1 && String.slice(&1, 0, 320)))
     |> update_change(:rfc_message_id, &(&1 && String.slice(&1, 0, 998)))
     |> validate_required([:provider, :outcome, :received_at])
     |> check_constraint(:provider, name: :provider_known)
     |> check_constraint(:outcome, name: :outcome_known)
+    |> check_constraint(:alert_jobs, name: :alert_jobs_counted)
     |> unique_constraint(:provider_message_id, name: :inbound_messages_delivery_index)
   end
 end

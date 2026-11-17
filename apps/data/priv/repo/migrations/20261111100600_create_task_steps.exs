@@ -3,7 +3,7 @@ defmodule Data.Repo.Migrations.CreateTaskSteps do
 
   @moduledoc """
   A task's steps (AQ-02 §5.1, QP2-1): **a table of their own**, one level by
-  construction — mCart's argument for replies, applied to steps. Each has
+  construction — tCart's argument for replies, applied to steps. Each has
   one assignee: a staff person (`assignee_user_id`) or the customer
   (`is_for_customer`), never both. A step for the customer needs a task
   with a customer; `Core.Tasks.Steps` says so in words.

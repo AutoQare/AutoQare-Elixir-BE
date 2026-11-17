@@ -42,6 +42,7 @@ defmodule ApiShared.CustomersJSON do
       inserted_at: c.inserted_at,
       updated_at: c.updated_at
     }
+    |> then(&if(is_boolean(c.muted), do: Map.put(&1, :muted, c.muted), else: &1))
   end
 
   @doc "A profile: every §4.3 column by name, plus skills, owners, channel ids and the default document."

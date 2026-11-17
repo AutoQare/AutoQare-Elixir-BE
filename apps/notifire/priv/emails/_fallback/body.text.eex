@@ -1,0 +1,7 @@
+Hi <%= @first_name %>,
+
+<%= @title %>
+<%= if @body do %>
+<%= @body %>
+<% end %><%= facts_text(@facts) %>
+Open AutoQare: <%= @url %>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <title><%= escape(@subject) %></title>
+  <style>
+    @media (prefers-color-scheme: dark) {
+      body, .aq-page { background-color: #0F1216 !important; }
+      .aq-card { background-color: #181C22 !important; border-color: #2A3038 !important; }
+      .aq-card h1, .aq-card p, .aq-card td, .aq-org { color: #E8EAED !important; }
+      .aq-muted, .aq-muted a { color: #9AA3AE !important; }
+    }
+    @media only screen and (max-width: 620px) {
+      .aq-container { width: 100% !important; }
+      .aq-pad { padding-left: 20px !important; padding-right: 20px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:#F5F6F8;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<%= preheader(@preheader) %>
+<table role="presentation" class="aq-page" border="0" cellpadding="0" cellspacing="0" width="100%" bgcolor="#F5F6F8" style="background-color:#F5F6F8;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" class="aq-container" border="0" cellpadding="0" cellspacing="0" width="600" style="width:600px;max-width:600px;">
+        <tr>
+          <td class="aq-pad" style="padding:0 8px 16px 8px;">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+              <tr>
+                <td valign="middle" style="padding-right:10px;"><img src="<%= escape(@logo_url) %>" width="28" height="28" alt="" style="display:block;border:0;outline:none;text-decoration:none;border-radius:6px;"></td>
+                <td valign="middle" class="aq-org" style="font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:20px;font-weight:600;color:#14171C;"><%= escape(@org_name) %></td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="aq-card aq-pad" bgcolor="#FFFFFF" style="background-color:#FFFFFF;border:1px solid #DEE1E6;border-radius:12px;padding:28px 32px;">
+<%= @inner %>
+          </td>
+        </tr>
+        <tr>
+          <td class="aq-pad aq-muted" style="padding:20px 8px 0 8px;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#5C6572;">
+            <p style="margin:0 0 8px 0;color:#5C6572;">Why you got this: <%= escape(@why) %></p>
+<%= if @manage_url do %>            <p style="margin:0 0 8px 0;color:#5C6572;"><a href="<%= escape(@manage_url) %>" style="color:#0E7C86;text-decoration:underline;">Manage notifications</a><%= if @unsubscribe_url do %> &middot; <a href="<%= escape(@unsubscribe_url) %>" style="color:#0E7C86;text-decoration:underline;">Unsubscribe from <%= escape(@group_label) %></a><% end %></p>
+<% end %><%= if @locked_note do %>            <p style="margin:0 0 8px 0;color:#5C6572;"><%= escape(@locked_note) %></p>
+<% end %><%= if @help_email || @postal_address do %>            <p style="margin:0 0 8px 0;color:#5C6572;"><%= if @help_email do %>Help: <a href="mailto:<%= escape(@help_email) %>" style="color:#0E7C86;text-decoration:underline;"><%= escape(@help_email) %></a><% end %><%= if @help_email && @postal_address do %> &middot; <% end %><%= if @postal_address do %><%= escape(@postal_address) %><% end %></p>
+<% end %>            <p style="margin:0;color:#5C6572;">Sent by AutoQare for <%= escape(@org_name) %></p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

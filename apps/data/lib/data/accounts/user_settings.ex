@@ -1,8 +1,9 @@
 defmodule Data.Accounts.UserSettings do
   @moduledoc """
   A person's settings, 1:1 with their account (AQ-01 §4.1): the theme, quiet
-  hours (both null = off) and the daily digest. `defaults/1` is what a reader
-  gets when no row exists yet.
+  hours (both null = off) and the digest. `defaults/1` is what a reader
+  gets when no row exists yet. P10b (AQ-10B §11.4): `digest_frequency`
+  (`daily · weekly · off`) and `snoozed_until`.
   """
 
   use Data.Schema
@@ -10,6 +11,7 @@ defmodule Data.Accounts.UserSettings do
   alias Data.Accounts.User
 
   @themes ~w(system light dark)a
+  @digest_frequencies Data.Vocabulary.digest_frequencies() |> Enum.map(&String.to_atom/1)
 
   @primary_key false
 
@@ -20,7 +22,8 @@ defmodule Data.Accounts.UserSettings do
     field(:quiet_hours_start, :time)
     field(:quiet_hours_end, :time)
     field(:digest_time, :time, default: ~T[08:00:00])
-    field(:digest_on, :boolean, default: true)
+    field(:digest_frequency, Ecto.Enum, values: @digest_frequencies, default: :daily)
+    field(:snoozed_until, :utc_datetime_usec)
 
     belongs_to(:user, User, primary_key: true)
 
@@ -42,11 +45,13 @@ defmodule Data.Accounts.UserSettings do
       :quiet_hours_start,
       :quiet_hours_end,
       :digest_time,
-      :digest_on
+      :digest_frequency,
+      :snoozed_until
     ])
-    |> validate_required([:user_id, :theme, :digest_time, :digest_on])
+    |> validate_required([:user_id, :theme, :digest_time, :digest_frequency])
     |> validate_quiet_hours()
     |> check_constraint(:theme, name: :theme_known)
+    |> check_constraint(:digest_frequency, name: :digest_frequency_known)
     |> foreign_key_constraint(:user_id)
     |> unique_constraint(:user_id)
   end

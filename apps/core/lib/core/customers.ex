@@ -17,9 +17,11 @@ defmodule Core.Customers do
 
   alias Core.Access
   alias Core.Audit
+  alias Core.Notifications.Profiles, as: ProfileNotices
   alias Core.Organisation.Invitations
   alias Data.Customers
   alias Data.Customers.Customer
+  alias Data.Notifications.Mutes
   alias Data.Repo
   alias Data.Scope
   alias Data.Teams
@@ -29,29 +31,30 @@ defmodule Core.Customers do
   # ── Reads ───────────────────────────────────────────────────────────────────
 
   @doc """
-  `GET /customers?team_id&status&q&mine`: every customer for an admin, the
+  `GET /customers?team_id&$where`: every customer for an admin, the
   caller's teams' otherwise; a customer in no team is the system admin's
-  alone (QP4a-23).
-  `mine` keeps the customers with a profile the caller owns.
+  alone (QP4a-23). `team_id` (the scope) narrows to one team within that.
+  `$where` is `Data.Filters.Customers`' (`status`, `q`, and `mine`: the
+  customers with a profile the caller owns, in SQL).
   """
   @spec list(Scope.t(), map()) :: {:ok, [Customer.t()]} | {:error, term()}
   def list(%Scope{organisation: organisation} = scope, params \\ %{}) do
     params = stringify(params)
 
     with :ok <- Access.why_not(scope, :list, {:customer, %{}}),
-         {:ok, status} <- status(params["status"], required: false) do
-      opts = [
-        team_ids: visible_team_ids(scope, params["team_id"]),
-        status: status,
-        q: params["q"]
-      ]
-
-      {:ok, organisation.id |> Customers.list(opts) |> mine(scope, params["mine"])}
+         {:ok, customers} <-
+           Customers.filtered(
+             organisation.id,
+             visible_team_ids(scope, Utils.presence(params["team_id"])),
+             params["$where"],
+             Data.Filters.context(scope, [])
+           ) do
+      {:ok, mark_muted(customers, scope)}
     end
   end
 
   # An admin sees every team (nil: no narrowing); staff see their own, and a
-  # `team_id` filter narrows within that.
+  # `team_id` narrows within that.
   defp visible_team_ids(scope, nil),
     do: if(Scope.admin?(scope), do: nil, else: Scope.team_ids(scope))
 
@@ -59,19 +62,27 @@ defmodule Core.Customers do
     if Scope.admin?(scope) or team_id in Scope.team_ids(scope), do: [team_id], else: []
   end
 
-  defp mine(customers, scope, mine) when mine in [true, "true", "1"] do
-    me = Scope.user_id(scope)
-
-    Enum.filter(customers, fn c ->
-      Enum.any?(c.profiles, fn p -> Enum.any?(p.profile_members, &(&1.user_id == me)) end)
-    end)
-  end
-
-  defp mine(customers, _scope, _not_mine), do: customers
-
   @doc "`GET /customers/:id`, and the portal's `GET /customer` with the scope's own id."
   @spec get(Scope.t(), binary()) :: {:ok, Customer.t()} | {:error, term()}
-  def get(%Scope{} = scope, id), do: fetch(scope, :read, id)
+  def get(%Scope{} = scope, id) do
+    with {:ok, customer} <- fetch(scope, :read, id),
+         do: {:ok, customer |> List.wrap() |> mark_muted(scope) |> hd()}
+  end
+
+  # AQ-10B §11.4: staff read whether they muted each customer.
+  defp mark_muted(customers, scope) do
+    if Scope.customer?(scope) or is_nil(Scope.user_id(scope)) do
+      customers
+    else
+      muted =
+        Mutes.muted_customers(
+          Scope.user_id(scope),
+          Enum.map(customers, & &1.id)
+        )
+
+      Enum.map(customers, &%{&1 | muted: MapSet.member?(muted, &1.id)})
+    end
+  end
 
   @doc "The customer behind `id`, if the caller may take `action` on them."
   @spec fetch(Scope.t(), atom(), binary()) :: {:ok, Customer.t()} | {:error, term()}
@@ -217,8 +228,11 @@ defmodule Core.Customers do
   end
 
   defp link_and_reload(scope, customer, team, now) do
-    with {:ok, _link} <- link_team(scope, customer, team, now),
-         do: {:ok, Customers.reload(customer)}
+    with {:ok, _link} <- link_team(scope, customer, team, now) do
+      # AQ-10B §5.7 CP3: the new team's leads.
+      {:ok, Customers.reload(customer),
+       ProfileNotices.team_changed(scope, customer, team, :added, now)}
+    end
   end
 
   defp link_team(scope, customer, team, now) do
@@ -249,7 +263,8 @@ defmodule Core.Customers do
             now: now
           )
 
-        {:ok, Customers.reload(customer)}
+        {:ok, Customers.reload(customer),
+         ProfileNotices.team_changed(scope, customer, team, :removed, now)}
       end)
     end
   end
@@ -315,10 +330,20 @@ defmodule Core.Customers do
   def commit(work) when is_function(work, 0) do
     Repo.transaction(fn ->
       case work.() do
-        {:ok, value} -> value
+        {:ok, value} -> {value, []}
+        # AQ-10B: a notice's socket events, sent after commit.
+        {:ok, value, events} -> {value, events}
         {:error, reason} -> Repo.rollback(reason)
       end
     end)
+    |> case do
+      {:ok, {value, events}} ->
+        :ok = Core.Notifications.send_events(events)
+        {:ok, value}
+
+      other ->
+        other
+    end
   end
 
   @doc false
@@ -331,8 +356,6 @@ defmodule Core.Customers do
       _unknown -> DateTime.to_date(now)
     end
   end
-
-  defp status(nil, required: false), do: {:ok, nil}
 
   defp status(status, _opts) when is_binary(status) do
     if status in Data.Vocabulary.customer_statuses(),

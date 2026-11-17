@@ -263,11 +263,32 @@ defmodule Core.MeetingsTest do
 
     week = %{
       "team_id" => c.backend.id,
-      "from" => "2026-11-23T00:00:00Z",
-      "to" => "2026-11-30T00:00:00Z"
+      "$where" => %{
+        "starts_at" => %{"$GTE" => "2026-11-23T00:00:00Z", "$LT" => "2026-11-30T00:00:00Z"}
+      }
     }
 
     assert {:ok, %{items: []}} = Meetings.list(c.fiza_scope, week, @now)
+
+    this_week = put_in(week, ["$where", "starts_at"], %{"$GTE" => "2026-11-16T00:00:00Z"})
+    assert {:ok, %{items: [%{id: ^id}]}} = Meetings.list(c.fiza_scope, this_week, @now)
+
+    upcoming = %{"team_id" => c.backend.id, "$where" => %{"upcoming" => %{"$EQUAL" => true}}}
+    assert {:ok, %{items: [%{id: ^id}]}} = Meetings.list(c.fiza_scope, upcoming, @now)
+
+    later = DateTime.add(m.ends_at, 60, :second)
+    assert {:ok, %{items: []}} = Meetings.list(c.fiza_scope, upcoming, later)
+    assert {:ok, %{items: []}} = Meetings.list(c.fiza_scope, %{"team_id" => c.backend.id}, later)
+
+    everything = %{"team_id" => c.backend.id, "$where" => %{"upcoming" => %{"$EQUAL" => false}}}
+    assert {:ok, %{items: [%{id: ^id}]}} = Meetings.list(c.fiza_scope, everything, later)
+
+    assert {:error, {:invalid_filter, %{"from" => _}}} =
+             Meetings.list(
+               c.fiza_scope,
+               %{"team_id" => c.backend.id, "$where" => %{"from" => "x"}},
+               @now
+             )
 
     assert Meetings.schedule(scope_for(c.muaz), c.lead.id, body(c), @now) ==
              {:error,

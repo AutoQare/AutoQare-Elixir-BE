@@ -22,6 +22,14 @@ defmodule Core.Leads.Ledger do
     the meeting kinds are the customer's; `message_in` and `message_out`
     follow the team's `customer_sees_conversations`, passed as
     `visibility`.
+  - **The stage reached** (AQ-11 §7.4, QP11-5): an `applied` or
+    `stage_moved` row carries `stage_kind`, the engine kind of the stage
+    the lead is at once the verb has moved it (a custom stage's anchor),
+    so the funnel reads "reached an interview" from history.
+  - **An import** (AQ-12 §11.4, QP12-5): a row an import writes passes
+    `actor_kind: :import` and the person it is credited to as
+    `actor_user_id` — whoever applied, not whoever ran the import — so the
+    dashboards count it as theirs; it moves the activity like a person's.
   - **Activity** (§7, PLAN §6.6): every event made by a person — `user`,
     `customer` or `extension` (a press is a person's act, Q8) — moves the
     lead's `last_activity_at` and its job's, so P4b's sweep reads one
@@ -53,13 +61,14 @@ defmodule Core.Leads.Ledger do
   @doc """
   Writes one event of `kind` on `lead` (`attrs`: `from_label`, `to_label`,
   `outcome`, `note`, `document_id`, `task_id`, `note_id`, `is_again`,
-  `occurred_at`, `request_id`, and `visibility` where the kind does not decide it) and, for a
+  `occurred_at`, `request_id`, and `visibility` where the kind does not decide it; an
+  import's `actor_kind: :import` with its `actor_user_id`) and, for a
   person's, moves the activity. Answers the event; raises (rolling the verb
   back) on a row it cannot write.
   """
   @spec record(Scope.t(), Lead.t(), atom(), map(), DateTime.t()) :: Event.t()
   def record(%Scope{} = scope, %Lead{} = lead, kind, attrs, %DateTime{} = now) do
-    actor_kind = actor_kind(scope)
+    actor_kind = Map.get(attrs, :actor_kind) || actor_kind(scope)
 
     {:ok, event} =
       attrs
@@ -70,13 +79,14 @@ defmodule Core.Leads.Ledger do
         occurred_at: Map.get(attrs, :occurred_at) || now,
         recorded_at: now,
         actor_kind: actor_kind,
-        actor_user_id: Scope.user_id(scope),
+        actor_user_id: Map.get(attrs, :actor_user_id) || Scope.user_id(scope),
         visibility:
-          Map.get(attrs, :visibility) || if(kind in @staff_only, do: :staff, else: :customer)
+          Map.get(attrs, :visibility) || if(kind in @staff_only, do: :staff, else: :customer),
+        stage_kind: stage_kind(kind, lead)
       })
       |> Store.add_event()
 
-    if actor_kind in [:user, :customer, :extension], do: touch(lead, now)
+    if actor_kind in [:user, :customer, :extension, :import], do: touch(lead, now)
     event
   end
 
@@ -90,6 +100,18 @@ defmodule Core.Leads.Ledger do
       true -> :system
     end
   end
+
+  @doc "The engine kind of a stage: its own, or a custom stage's anchor (AQ-04A §9.2)."
+  @spec engine_kind(map() | nil) :: atom() | nil
+  def engine_kind(%{kind: :custom, anchor_kind: anchor}), do: anchor
+  def engine_kind(%{kind: kind}), do: kind
+  def engine_kind(_none), do: nil
+
+  # The stage the verb left the lead at, on the two kinds that reach one.
+  defp stage_kind(kind, %Lead{stage: stage}) when kind in [:applied, :stage_moved],
+    do: engine_kind(stage)
+
+  defp stage_kind(_kind, _lead), do: nil
 
   defp touch(lead, now) do
     :ok = Store.touch(lead, now)

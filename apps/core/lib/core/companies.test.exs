@@ -47,7 +47,7 @@ defmodule Core.CompaniesTest do
     _archived = job_fixture(c.fiza_scope, company: bamboo, archived: true)
 
     assert {:ok, %{open_jobs: [%{id: id, title: "Backend Developer"}]}} =
-             Companies.get(c.fiza_scope, bamboo.id)
+             Companies.get(c.fiza_scope, bamboo.id, DateTime.utc_now())
 
     assert id == open.id
 
@@ -70,13 +70,22 @@ defmodule Core.CompaniesTest do
     for name <- ["Bamboo Invest", "Bambú Labs", "TuxCare", "Fennec Cloud"],
         do: company_fixture(c.org, name: name)
 
-    names = fn q -> c.fiza_scope |> Companies.search(q) |> elem(1) |> Enum.map(& &1.name) end
+    names = fn q ->
+      c.fiza_scope
+      |> Companies.search(%{"$where" => %{"q" => %{"$ILIKE" => q}}})
+      |> elem(1)
+      |> Enum.map(& &1.name)
+    end
 
     assert names.("bamb") == ["Bamboo Invest", "Bambú Labs"]
     assert names.("BAMBU") == ["Bambú Labs"]
     assert names.("care") == ["TuxCare"]
     assert names.("Fenec Cloud") == ["Fennec Cloud"]
     assert length(names.(nil)) == 4
+    assert length(names.("%%")) == 4
+
+    assert {:error, {:invalid_filter, %{"domain" => _}}} =
+             Companies.search(c.fiza_scope, %{"$where" => %{"domain" => "tux.io"}})
   end
 
   test "a domain is one company's, written any way", c do

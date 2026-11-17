@@ -37,7 +37,12 @@ defmodule ApiShared.NotificationControllerTest do
              %{"key" => "tasks", "label" => "Tasks"}
            ]
 
-    assert body(get("/v1/notifications?group=leads", user))["items"] == []
+    assert body(get("/v1/notifications?$where[group][$EQUAL]=leads", user))["items"] == []
+    assert length(body(get("/v1/notifications?$where[group][$IN][]=tasks", user))["items"]) == 2
+    assert length(body(get("/v1/notifications?$where[unread][$EQUAL]=true", user))["items"]) == 2
+
+    refused = get("/v1/notifications?$where[kind][$EQUAL]=tasks.assigned", user)
+    assert refused.status == 422 and body(refused)["error"]["code"] == "invalid_filter"
 
     assert post("/v1/notifications/#{theirs.id}/read", user).status == 404
     assert post("/v1/notifications/#{hd(mine).id}/read", user).status == 204

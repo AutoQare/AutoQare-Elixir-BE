@@ -12,6 +12,12 @@ defmodule Core.Conversations.Platforms do
     ("Your application was sent to Corvid Security · Senior Golang
     Engineer", "Indeed Application: Senior Golang Engineer", "Thank you
     for applying to Corvid Security"); bodies are not.
+  - **Fiverr's notices** (AQ-12 §6, §11.4, QP12-22) — a brief, a buyer's
+    message, an order, from `fiverr.com` or a subdomain (`e.fiverr.com`)
+    — are recognised by sender too: such a mail lands as a conversation
+    on `platform: fiverr` (`Core.Conversations.Inbox`), in triage on the
+    receiving profile. LinkedIn's and Indeed's job alerts are
+    `Core.Conversations.Alerts`'.
   - **The sender's domain** names a company unless it is free mail
     (gmail, outlook, yahoo, icloud, proton…) or a platform's.
   """
@@ -28,7 +34,9 @@ defmodule Core.Conversations.Platforms do
     "lever" => :lever,
     "ashbyhq" => :ashby,
     "workable" => :workable,
-    "workablemail" => :workable
+    "workablemail" => :workable,
+    "fiverr" => :fiverr,
+    "fiverrmail" => :fiverr
   }
 
   @free ~w(gmail.com googlemail.com outlook.com hotmail.com live.com msn.com yahoo.com ymail.com
@@ -65,6 +73,8 @@ defmodule Core.Conversations.Platforms do
       :greenhouse
       iex> Core.Conversations.Platforms.platform("jobs-noreply@linkedin.com")
       :linkedin
+      iex> Core.Conversations.Platforms.platform("noreply@e.fiverr.com")
+      :fiverr
       iex> Core.Conversations.Platforms.platform("omar.haddad@corvid.example")
       nil
   """

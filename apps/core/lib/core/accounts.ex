@@ -21,6 +21,8 @@ defmodule Core.Accounts do
   alias Core.Broadcast
   alias Core.Clock
   alias Core.Media
+  alias Core.Notifications
+  alias Core.Notifications.Account, as: AccountNotices
   alias Core.Notifications.Deliveries
   alias Data.Accounts
   alias Data.Accounts.Person
@@ -31,7 +33,7 @@ defmodule Core.Accounts do
 
   @person_fields ~w(display_name given_name family_name timezone locale_code)a
   @person_params Enum.map(@person_fields, &to_string/1) ++ ["photo_media_id"]
-  @settings_fields ~w(theme quiet_hours_start quiet_hours_end digest_time digest_on)a
+  @settings_fields ~w(theme quiet_hours_start quiet_hours_end digest_time digest_frequency)a
 
   # ── Guardian's loader ───────────────────────────────────────────────────────
 
@@ -119,15 +121,38 @@ defmodule Core.Accounts do
     end
   end
 
+  # The first sign-in also welcomes the person (AQ-10B §5.1 A5).
   defp record_sign_in(user, now) do
     scope = Grants.scope_for(user)
+    first? = is_nil(user.last_signed_in_at)
 
     Repo.transaction(fn ->
-      {:ok, user} = Accounts.mark_signed_in(user, now)
-      if scope.organisation, do: Audit.record(scope, "signed_in", user, now: now)
-      Accounts.with_person(user)
+      {:ok, signed} = Accounts.mark_signed_in(user, now)
+      if scope.organisation, do: Audit.record(scope, "signed_in", signed, now: now)
+
+      events =
+        if first?,
+          do:
+            AccountNotices.welcome(
+              signed,
+              Scope.organisation_id(scope),
+              Scope.customer?(scope),
+              now
+            ),
+          else: []
+
+      {Accounts.with_person(signed), events}
     end)
+    |> sent()
   end
+
+  # A transaction's `{value, events}`: the events sent after commit.
+  defp sent({:ok, {value, events}}) do
+    :ok = Notifications.send_events(events)
+    {:ok, value}
+  end
+
+  defp sent(other), do: other
 
   # ── Sessions ────────────────────────────────────────────────────────────────
 
@@ -146,7 +171,25 @@ defmodule Core.Accounts do
 
   @doc "Ends every session the person has, on every device, and drops their live sockets."
   @spec logout_all(Scope.t()) :: :ok
-  def logout_all(%Scope{user: user}), do: revoke_everything(user)
+  def logout_all(%Scope{user: user} = scope) do
+    :ok = revoke_everything(user)
+
+    {:ok, :ok} =
+      Repo.transaction(fn ->
+        events =
+          AccountNotices.security(
+            user,
+            Scope.organisation_id(scope),
+            :signed_out_everywhere,
+            Clock.now()
+          )
+
+        {:ok, events}
+      end)
+      |> sent()
+
+    :ok
+  end
 
   defp revoke_everything(user) do
     {:ok, _count} = Guardian.revoke_all_for(user)
@@ -264,7 +307,8 @@ defmodule Core.Accounts do
   end
 
   @doc """
-  Theme, quiet hours, digest (`PUT /me/settings`). A changed quiet-hours
+  Theme, quiet hours, the digest's time and frequency (`PUT /me/settings`;
+  P10b: `digest_frequency` `daily · weekly · off`). A changed quiet-hours
   window re-plans the person's deliveries it held (AQ-08 §11.4), in the
   same transaction.
   """
@@ -320,8 +364,16 @@ defmodule Core.Accounts do
       Repo.transaction(fn ->
         {:ok, user} = Accounts.set_password(user, new)
         {:ok, _event} = Audit.record(scope, "password_changed", user)
-        :ok
+
+        {:ok,
+         AccountNotices.security(
+           user,
+           Scope.organisation_id(scope),
+           :password_changed,
+           Clock.now()
+         )}
       end)
+      |> sent()
       |> elem(1)
     end
   end
@@ -347,8 +399,9 @@ defmodule Core.Accounts do
         {:ok, target} = Accounts.set_suspended(target, now)
         {:ok, _event} = Audit.record(scope, "suspended", target, now: now)
         :ok = revoke_everything(target)
-        target
+        {target, AccountNotices.security(target, Scope.organisation_id(scope), :suspended, now)}
       end)
+      |> sent()
     end
   end
 
@@ -360,8 +413,11 @@ defmodule Core.Accounts do
       Repo.transaction(fn ->
         {:ok, target} = Accounts.set_suspended(target, nil)
         {:ok, _event} = Audit.record(scope, "unsuspended", target)
-        target
+
+        {target,
+         AccountNotices.security(target, Scope.organisation_id(scope), :restored, Clock.now())}
       end)
+      |> sent()
     end
   end
 

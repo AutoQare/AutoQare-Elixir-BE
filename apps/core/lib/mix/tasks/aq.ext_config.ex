@@ -3,7 +3,8 @@ defmodule Mix.Tasks.Aq.ExtConfig do
 
   @moduledoc """
   The extension's selector documents (AQ-05 §6.4, QP5-21): a DOM change on
-  LinkedIn or Upwork is a config release, not a store release.
+  LinkedIn, Upwork, Indeed, YC Work at a Startup or Wellfound (AQ-12) is a
+  config release, not a store release.
 
       mix aq.ext_config
 

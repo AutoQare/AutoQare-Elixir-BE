@@ -1,0 +1,6 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= quoted(@body) %>
+<%= facts(@facts) %>
+<%= button("Open the approval", @url) %>
+<%= link(@url) %>

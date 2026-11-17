@@ -27,7 +27,7 @@ defmodule Core.Notifications.DigestTest do
       row("“Send the rate” is overdue", "tasks")
     ]
 
-    assert %{title: "4 things you haven't read", body: body} = Digest.compose(rows, @groups)
+    assert %{title: "4 things waiting for you", body: body} = Digest.compose(rows, @groups)
 
     assert body ==
              Enum.join(
@@ -49,7 +49,7 @@ defmodule Core.Notifications.DigestTest do
     rows = for n <- 1..62, do: row("Task #{n} is overdue", "tasks")
     %{title: title, body: body} = Digest.compose(rows, @groups)
 
-    assert title == "62 things you haven't read"
+    assert title == "62 things waiting for you"
     lines = String.split(body, "\n")
     assert hd(lines) == "Tasks · 62"
     assert Enum.at(lines, 2) == "Task 1 is overdue"

@@ -21,11 +21,18 @@ defmodule Core.Notifications do
   browser (`Push`), the extension's pop-ups (`PopUps`), the digest
   (`Digest`, `Digests`), quiet hours (`QuietHours`) and delivery health
   (`Health`). `notifire` delivers from the ledger and never calls here.
+
+  **P10b (AQ-10B §11.4):** a person who muted the row's lead, or its
+  customer (every lead, task, approval and meeting of theirs), gets **no
+  row at all** — except a mention, an approval asked of them and a meeting
+  about to start (`Mutes`). Mail for a customer with no portal login is
+  `CustomerMail`'s; mutes and watches of a lead are `Mutes` and
+  `LeadWatch`; the unsubscribe link is `Unsubscribe`.
   """
 
   alias Core.Clock
   alias Core.Media
-  alias Core.Notifications.Deliveries
+  alias Core.Notifications.{Deliveries, Mutes}
   alias Core.Realtime
   alias Core.Tasks.Words
   alias Data.Accounts.Person
@@ -41,19 +48,38 @@ defmodule Core.Notifications do
   @doc """
   Ensures the notification (`attrs` as `Data.Notifications.ensure/2` takes
   them) and, when it is new, plans its deliveries at `now` in the same
-  transaction. `attrs[:ics]`, a meeting's calendar file, rides on the
-  email row. Answers the row either way, `is_new` saying whether this call
-  wrote it.
+  transaction. Three attrs are the plan's, popped before the row is
+  written:
+
+  - `:ics`, a meeting's calendar file, rides on the email row;
+  - `:only_channels` (AQ-10 §11.4), a list: the kind's channels and the
+    person's switches are narrowed to it; the bell always stays;
+  - `:passes_quiet_hours` (AQ-10 QP10-10), a boolean in place of the
+    kind's own `can_ignore_quiet_hours`.
+
+  Answers the row either way, `is_new` saying whether this call wrote it.
+  A muted subject writes nothing and answers an unsaved row with `is_new`
+  false (AQ-10B §11.4).
   """
   @spec ensure(Scope.t(), map(), DateTime.t()) ::
           {:ok, Notification.t()} | {:error, Ecto.Changeset.t()}
   def ensure(%Scope{} = scope, attrs, %DateTime{} = now \\ Clock.now()) do
-    {ics, attrs} = attrs |> Map.new() |> Map.pop(:ics)
+    attrs = Map.new(attrs)
+    plan = Map.take(attrs, [:ics, :only_channels, :passes_quiet_hours])
+    attrs = Map.drop(attrs, [:ics, :only_channels, :passes_quiet_hours])
 
+    if Mutes.silenced?(attrs) do
+      {:ok, struct(Notification, Map.put(attrs, :is_new, false))}
+    else
+      write(scope, attrs, plan, now)
+    end
+  end
+
+  defp write(scope, attrs, plan, now) do
     Repo.transaction(fn ->
       case Notifications.ensure(scope, attrs) do
         {:ok, %Notification{is_new: true} = row} ->
-          _rows = Deliveries.plan(row, ics, now)
+          _rows = Deliveries.plan(row, plan, now)
           row
 
         {:ok, row} ->
@@ -64,6 +90,10 @@ defmodule Core.Notifications do
       end
     end)
   end
+
+  @doc "Sends socket events a notice module answered (nested lists welcome), after commit."
+  @spec send_events(list()) :: :ok
+  def send_events(events), do: events |> List.flatten() |> Realtime.send_all()
 
   @doc "The socket events new rows make (`notification_created {id}` on `user:<id>`), sent now."
   @spec created([Notification.t()]) :: :ok
@@ -76,23 +106,21 @@ defmodule Core.Notifications do
   end
 
   @doc """
-  `GET /notifications?group&unread&cursor`: a keyset page, newest first,
+  `GET /notifications?$where&cursor&limit`: a keyset page, newest first,
   `%{items, next_cursor}`; `next_cursor` is `nil` on the last page.
+  `$where` is `Data.Filters.Notifications`' (`unread`, `group`).
   """
   @spec page(Scope.t(), map()) :: {:ok, map()} | {:error, term()}
   def page(%Scope{} = scope, params) do
     params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
 
     with {:ok, user_id} <- me(scope),
-         {:ok, after_key} <- cursor(params["cursor"]) do
-      {rows, more?} =
-        Notifications.page(user_id,
-          group: Utils.presence(params["group"] || ""),
-          unread: params["unread"] in [true, "true", "1"],
-          after: after_key,
-          limit: limit(params["limit"])
-        )
-
+         {:ok, after_key} <- cursor(params["cursor"]),
+         {:ok, {rows, more?}} <-
+           Notifications.page(user_id, params["$where"],
+             after: after_key,
+             limit: limit(params["limit"])
+           ) do
       next = if more?, do: rows |> List.last() |> encode()
       {:ok, %{items: Enum.map(rows, &item(&1, Scope.customer?(scope))), next_cursor: next}}
     end

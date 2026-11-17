@@ -5,7 +5,8 @@ defmodule Core.Conversations.Triage do
   no table, and a link or an ignore is the only state. Every member of
   the team sees and sorts it; another team finds nothing.
 
-  - **`GET /triage?team_id`**: newest first, each with its first message
+  - **`GET /triage?team_id&$where`**: newest first (`Data.Filters.Triage`:
+    `profile_owner`), each with its first message
     and its candidates — the open leads of the team holding one of its
     contacts (§7.2 rule 3: "Sender is a contact on *Backend Developer ·
     Bamboo Invest*").
@@ -28,6 +29,7 @@ defmodule Core.Conversations.Triage do
   alias Core.Contacts.LeadLinks
   alias Core.Conversations
   alias Core.Conversations.{Match, Record}
+  alias Core.Jobs.Link
   alias Core.Leads
   alias Core.Leads.{Sheet, Signals}
   alias Core.Realtime
@@ -36,13 +38,19 @@ defmodule Core.Conversations.Triage do
   alias Data.Conversations, as: Store
   alias Data.Scope
 
-  @doc "`GET /triage?team_id`: `{team, items: [triage item]}`."
+  @doc """
+  `GET /triage?team_id&$where`: `{team, items: [triage item]}`; `$where`
+  is `Data.Filters.Triage`'s (`profile_owner {$EQUAL: "me"}`: the items on
+  the caller's profiles, as *My numbers* counts them).
+  """
   @spec list(Scope.t(), map()) :: {:ok, map()} | {:error, term()}
   def list(%Scope{} = scope, params) do
-    with :ok <- staff(scope),
-         {:ok, team} <- Core.Jobs.team(scope, Leads.stringify(params)) do
-      conversations = Store.triage(team.id)
+    params = Leads.stringify(params)
 
+    with :ok <- staff(scope),
+         {:ok, team} <- Core.Jobs.team(scope, params),
+         {:ok, conversations} <-
+           Store.triage(team.id, params["$where"], Data.Filters.context(scope, team_id: team.id)) do
       messages =
         conversations
         |> Enum.map(& &1.id)
@@ -181,17 +189,23 @@ defmodule Core.Conversations.Triage do
     do: Leads.invalid("id", "is linked to a lead: only a triage item is ignored")
 
   @doc """
-  `POST /conversations/:id/create-lead {profile_id, job: {…P3's job body…}}`:
-  P4a's `POST /leads` in the conversation's team, applied `recruiter_inbound`
-  at the `inbound` stage, and the link (`created_from_triage`), in one
-  transaction. Answers `{:ok, %{lead: card, conversation}}`.
+  `POST /conversations/:id/create-lead {profile_id, job: {…P3's job body…},
+  origin_kind?}`: P4a's `POST /leads` in the conversation's team, applied
+  `recruiter_inbound` at the `inbound` stage, and the link
+  (`created_from_triage`), in one transaction. Answers `{:ok, %{lead:
+  card, conversation}}`.
+
+  AQ-12 §11.4: for a Fiverr conversation `origin_kind` (`brief · inquiry ·
+  order`) is required and `job.url` optional; the job's source is `fiverr`,
+  its key `fiverr:conversation:{id}` (a brief's link kept as `source_url`),
+  and a brief is applied as `brief_response`.
   """
   @spec create_lead(Scope.t(), term(), map(), DateTime.t()) :: {:ok, map()} | {:error, term()}
   def create_lead(%Scope{} = scope, id, params, %DateTime{} = now) do
     params = Leads.stringify(params)
 
     with {:ok, c} <- Conversations.fetch(scope, :triage, id),
-         {:ok, job} <- job_body(params["job"]) do
+         {:ok, job, opts} <- job_body(c, params) do
       first = c.id |> List.wrap() |> Store.messages() |> List.first()
 
       body = %{
@@ -199,11 +213,12 @@ defmodule Core.Conversations.Triage do
         "job" => job,
         "profile_id" => params["profile_id"],
         "as" => "apply",
-        "applied_via" => "recruiter_inbound",
+        "applied_via" =>
+          if(opts[:origin_kind] == :brief, do: "brief_response", else: "recruiter_inbound"),
         "applied_at" => first && DateTime.to_iso8601(Enum.min([first.sent_at, now], DateTime))
       }
 
-      fn -> lead_made(scope, c, body, now) end
+      fn -> lead_made(scope, c, body, opts, now) end
       |> Write.commit()
       |> case do
         {:ok, {lead, c}} -> {:ok, made(scope, lead, c, now)}
@@ -212,8 +227,8 @@ defmodule Core.Conversations.Triage do
     end
   end
 
-  defp lead_made(scope, c, body, now) do
-    with {:ok, sheet} <- Leads.create(scope, body, now, stage_kind: :inbound),
+  defp lead_made(scope, c, body, opts, now) do
+    with {:ok, sheet} <- Leads.create(scope, body, now, [stage_kind: :inbound] ++ opts),
          lead = Data.Leads.get(c.organisation_id, sheet.id),
          {:ok, _how, events} <- Record.link(scope, c, lead, :created_from_triage, :sure, now) do
       {:ok, {lead, c}, events}
@@ -230,15 +245,33 @@ defmodule Core.Conversations.Triage do
     }
   end
 
-  # P3's job create needs the link: without one, the field error the form shows.
-  defp job_body(%{} = job) do
-    if Leads.blank(job["url"] || job[:url]),
-      do: {:ok, job},
-      else: Leads.invalid("job.url", "Add the job's link.")
+  # P3's job create needs the link: without one, the field error the form
+  # shows — except on Fiverr (AQ-12 §11.4), keyed by the conversation.
+  defp job_body(%{platform: :fiverr} = c, %{"job" => %{} = job} = params) do
+    job = Leads.stringify(job)
+
+    with {:ok, kind} <- Core.Jobs.fiverr_kind(params["origin_kind"]),
+         {:ok, link} <- Link.fiverr(Link.fiverr_conversation_key(c.id), job["url"]) do
+      {:ok, Map.put(job, "url", link.url), [link: link, origin_kind: kind]}
+    end
   end
 
-  defp job_body(nil), do: {:error, {:missing, [:job]}}
-  defp job_body(_other), do: Leads.invalid("job", "is P3's job body")
+  defp job_body(_c, %{"job" => %{} = job} = params) do
+    cond do
+      params["origin_kind"] not in [nil, ""] ->
+        Leads.invalid("origin_kind", "is only for a Fiverr conversation")
+
+      Leads.blank(job["url"] || job[:url]) ->
+        {:ok, job, []}
+
+      true ->
+        Leads.invalid("job.url", "Add the job's link.")
+    end
+  end
+
+  defp job_body(_c, %{"job" => nil}), do: {:error, {:missing, [:job]}}
+  defp job_body(_c, %{"job" => _other}), do: Leads.invalid("job", "is P3's job body")
+  defp job_body(_c, _params), do: {:error, {:missing, [:job]}}
 
   @doc """
   `POST /conversations/:id/recruiter {contact_id? | contact: {name,

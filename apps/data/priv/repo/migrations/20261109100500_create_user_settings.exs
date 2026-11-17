@@ -4,9 +4,16 @@ defmodule Data.Repo.Migrations.CreateUserSettings do
   @moduledoc """
   A person's settings, 1:1 with their account (AQ-01 §4.1): the theme, quiet
   hours (null = off) and the daily digest. **Code defaults when no row**
-  (mCart's pattern): a new account renders a screen before anybody opens
+  (tCart's pattern): a new account renders a screen before anybody opens
   the settings page. The notification groups' preferences come in P8.
+
+  **P10b (AQ-10B §11.4, QP10b-3, QP10b-12):** `digest_frequency` (`daily ·
+  weekly · off`; weekly goes on Monday) replaces `digest_on`, and
+  `snoozed_until` is *Pause notifications*: push, pop-ups and email held to
+  that moment while the bell fills.
   """
+
+  @digest_frequencies ~w(daily weekly off)
 
   def change do
     create table(:user_settings, primary_key: false) do
@@ -16,12 +23,19 @@ defmodule Data.Repo.Migrations.CreateUserSettings do
       add(:quiet_hours_start, :time)
       add(:quiet_hours_end, :time)
       add(:digest_time, :time, null: false, default: "08:00:00")
-      add(:digest_on, :boolean, null: false, default: true)
+      add(:digest_frequency, :text, null: false, default: "daily")
+      add(:snoozed_until, :timestamptz)
 
       timestamps()
     end
 
     create(constraint(:user_settings, :theme_known, check: "theme IN ('system','light','dark')"))
+
+    create(
+      constraint(:user_settings, :digest_frequency_known,
+        check: "digest_frequency IN (#{Enum.map_join(@digest_frequencies, ",", &"'#{&1}'")})"
+      )
+    )
 
     execute(
       "CREATE TRIGGER touch_updated_at BEFORE UPDATE ON user_settings " <>

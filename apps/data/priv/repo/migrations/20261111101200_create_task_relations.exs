@@ -2,11 +2,11 @@ defmodule Data.Repo.Migrations.CreateTaskRelations do
   use Ecto.Migration
 
   @moduledoc """
-  Tasks linked to each other (AQ-02 §5.1; mCart's): blocks · relates to ·
+  Tasks linked to each other (AQ-02 §5.1; tCart's): blocks · relates to ·
   duplicates. **One row, read from both ends**: `blocks` reads *is blocked
   by* from the other side, and `relates_to` is its own inverse, so the
   symmetric unique index holds one row per pair whichever way it was made.
-  Informational: a blocked task can still move (mCart §5b). Both ends in
+  Informational: a blocked task can still move (tCart §5b). Both ends in
   the same organisation is `Core.Tasks`'s to check.
   """
 

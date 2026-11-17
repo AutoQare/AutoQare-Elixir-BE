@@ -7,7 +7,9 @@ defmodule Data.Leads.Event do
   `note_added`; AQ-06 §5.4 the message, meeting, contact or conversation
   of P6's kinds; AQ-07 §5.4 the approval of P7's — at most one key
   (`one_ref`). AQ-05 §10.4: `request_id`,
-  the extension's queued write that made it, unique.
+  the extension's queued write that made it, unique. AQ-11 §7.4:
+  `stage_kind`, the engine kind of the stage an `applied` or `stage_moved`
+  reached.
   """
 
   use Data.Schema
@@ -22,6 +24,7 @@ defmodule Data.Leads.Event do
   @actors Vocabulary.event_actors() |> Enum.map(&String.to_atom/1)
   @visibilities Vocabulary.event_visibilities() |> Enum.map(&String.to_atom/1)
   @outcomes Vocabulary.lead_outcomes() |> Enum.map(&String.to_atom/1)
+  @stage_kinds Vocabulary.stage_kinds() |> Enum.map(&String.to_atom/1)
 
   @type t :: %__MODULE__{}
 
@@ -37,6 +40,7 @@ defmodule Data.Leads.Event do
     field(:note, :string)
     field(:is_again, :boolean, default: false)
     field(:request_id, Ecto.UUID)
+    field(:stage_kind, Ecto.Enum, values: @stage_kinds)
 
     belongs_to(:organisation, Organisation)
     belongs_to(:lead, Lead)
@@ -75,7 +79,8 @@ defmodule Data.Leads.Event do
       :conversation_id,
       :approval_id,
       :is_again,
-      :request_id
+      :request_id,
+      :stage_kind
     ])
     |> validate_required([
       :organisation_id,
@@ -94,6 +99,8 @@ defmodule Data.Leads.Event do
     |> check_constraint(:note, name: :note_with_reason)
     |> check_constraint(:is_again, name: :again_only_applied)
     |> check_constraint(:task_id, name: :one_ref)
+    |> check_constraint(:stage_kind, name: :stage_kind_known)
+    |> check_constraint(:stage_kind, name: :stage_kind_on_stage_events)
     |> unique_constraint(:request_id, name: :lead_events_request_id_index)
   end
 end

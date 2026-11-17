@@ -1,5 +1,9 @@
 defmodule ApiTeam.TeamJSON do
-  @moduledoc "The teams' shapes (AQ-01 §6.2)."
+  @moduledoc """
+  The teams' shapes (AQ-01 §6.2). AQ-11 §7.4: a member carries
+  `daily_target` (their own override, or `null`) and `target_today` (their
+  target today, `null` on a day off or with none).
+  """
 
   alias Data.Teams.TeamSettings
 
@@ -34,7 +38,9 @@ defmodule ApiTeam.TeamJSON do
       email: m.user.email,
       role: m.role,
       joined_at: m.joined_at,
-      left_at: m.left_at
+      left_at: m.left_at,
+      daily_target: m.daily_target,
+      target_today: m.target_today
     }
   end
 end

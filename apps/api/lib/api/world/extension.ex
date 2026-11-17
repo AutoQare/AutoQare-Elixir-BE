@@ -9,7 +9,11 @@ defmodule Api.World.Extension do
     `upwork.com/freelancers/~01aa00bb11cc22dd33`, linked to *Golang
     backend* too, so the Upwork panel picks it;
   - a LinkedIn for Naveed, `operated_by: customer`,
-    `linkedin.com/in/naveed-example`, linked to both his profiles.
+    `linkedin.com/in/naveed-example`, linked to both his profiles;
+  - AQ-12 (QP12-18): an Indeed account for Tanweer, `operated_by:
+    customer`, `tanweer.indeed@example.com` (`Utils.ChannelKey`'s
+    `indeed:{email}`), linked to *Golang backend*, so the Indeed panel
+    picks it — the channel the extension's end-to-end run expects.
 
   P9's (AQ-09 §13 step 0, `email/2`): an email channel each for Tanweer
   (`tanweer@example.com`, *Golang backend*) and Naveed
@@ -25,7 +29,7 @@ defmodule Api.World.Extension do
 
   @team "/team/v1"
 
-  @doc "The three channels, and their profiles' links."
+  @doc "The four channels, and their profiles' links."
   def channels(w, snap) do
     tanweer = customer(w, snap, "Tanweer")
     naveed = customer(w, snap, "Naveed")
@@ -54,12 +58,30 @@ defmodule Api.World.Extension do
         listens_via: "extension"
       })
 
-    link(w, profile(w, snap, "Tanweer", "Golang backend"), [linkedin["id"], upwork["id"]])
+    indeed =
+      Http.call(w, w.admin, :post, "#{@team}/customers/#{tanweer}/channels", %{
+        kind: "indeed",
+        label: "Indeed",
+        handle: "tanweer.indeed@example.com",
+        operated_by: "customer",
+        listens_via: "extension"
+      })
+
+    link(w, profile(w, snap, "Tanweer", "Golang backend"), [
+      linkedin["id"],
+      upwork["id"],
+      indeed["id"]
+    ])
 
     for title <- ["Elixir backend", "Golang"],
         do: link(w, profile(w, snap, "Naveed", title), [naveed_in["id"]])
 
-    channels = %{"tanweer_upwork" => upwork["id"], "naveed_linkedin" => naveed_in["id"]}
+    channels = %{
+      "tanweer_upwork" => upwork["id"],
+      "tanweer_indeed" => indeed["id"],
+      "naveed_linkedin" => naveed_in["id"]
+    }
+
     %{w | channels: Map.merge(w.channels, channels)}
   end
 

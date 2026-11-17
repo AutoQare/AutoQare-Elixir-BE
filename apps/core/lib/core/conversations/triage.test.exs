@@ -41,6 +41,33 @@ defmodule Core.Conversations.TriageTest do
     Map.merge(c, %{fiza_scope: fiza, mei: mei, item: item, first: first, juniper: juniper})
   end
 
+  test "profile_owner=me opens what My numbers counts as To sort in Triage (AQ-11B §11.4)", c do
+    # The item above names no customer: no one's. Tanweer's is Fiza's and Qasim's.
+    tanweers = conversation_fixture(c.fiza_scope, team: c.backend, customer: c.tanweer)
+    {by_person, total} = Core.Dashboards.triage(c.fiza_scope, [c.backend.id])
+
+    mine = fn who ->
+      {:ok, %{items: items}} =
+        Triage.list(scope_for(who), %{
+          "team_id" => c.backend.id,
+          "$where" => %{"profile_owner" => %{"$EQUAL" => "me"}}
+        })
+
+      Enum.map(items, & &1.conversation.id)
+    end
+
+    assert mine.(c.fiza) == [tanweers.id]
+    assert length(mine.(c.fiza)) == Map.get(by_person, c.fiza.id, 0)
+    assert length(mine.(c.qasim)) == Map.get(by_person, c.qasim.id, 0)
+    assert length(mine.(c.muaz)) == Map.get(by_person, c.muaz.id, 0)
+
+    {:ok, %{items: all}} = Triage.list(c.fiza_scope, %{"team_id" => c.backend.id})
+    assert length(all) == total
+
+    assert {:error, {:invalid_filter, %{"colour" => _}}} =
+             Triage.list(c.fiza_scope, %{"team_id" => c.backend.id, "$where" => %{"colour" => 1}})
+  end
+
   test "the team's triage: members only; Ignore and Undo; nothing to sort once linked", c do
     assert {:ok, %{items: [%{conversation: %{id: id}, first_message: %{id: first}}]}} =
              Triage.list(scope_for(c.muaz), %{"team_id" => c.backend.id})

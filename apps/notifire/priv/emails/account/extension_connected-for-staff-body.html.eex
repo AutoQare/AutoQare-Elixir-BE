@@ -1,0 +1,7 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("See your devices", @url) %>
+<%= link(@url) %>
+<%= paragraph("If this wasn’t you, disconnect it now and change your password.") %>

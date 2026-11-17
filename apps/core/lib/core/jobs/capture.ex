@@ -13,11 +13,18 @@ defmodule Core.Jobs.Capture do
     change, and `client_last_viewed_at` — "2 hours ago", read again an
     hour later — is the same moment within the precision it was read at.
 
+  AQ-10 adds two (§6.1, §6.3): a signals row whose `client_last_viewed_at`
+  moved writes `last_active_reported` for the job's company
+  (`Core.Behaviour.Sources`), and the Upwork client's local time, read as
+  a zone, becomes the company's unless one was set by hand
+  (`Core.Companies.put_upwork_zone/4`).
+
   Runs inside the caller's transaction. A capture is `%{snapshot: %{body,
-  captured_at}, signal: %{facts…, slack_s} | nil}`, as
-  `Core.Ingest.Extension.Normalize` makes it.
+  captured_at}, signal: %{facts…, slack_s} | nil, time_zone: zone | nil}`,
+  as `Core.Ingest.Extension.Normalize` makes it.
   """
 
+  alias Core.Behaviour.Sources
   alias Data.JobParts
   alias Data.Jobs.Signal
   alias Data.Scope
@@ -38,6 +45,7 @@ defmodule Core.Jobs.Capture do
         else: {:ok, false}
 
     {:ok, signal?} = signal(scope, job, capture[:signal], now)
+    :ok = Core.Companies.put_upwork_zone(scope, job.company_id, capture[:time_zone], now)
     {:ok, %{snapshot: snapshot?, signal: signal?}}
   end
 
@@ -67,8 +75,9 @@ defmodule Core.Jobs.Capture do
   defp signal(scope, job, signal, now) do
     {slack, facts} = Map.pop(signal, :slack_s, 0)
     facts = Map.take(facts, Signal.facts())
+    latest = JobParts.latest_signal(job.id)
 
-    if changed?(facts, JobParts.latest_signal(job.id), slack) do
+    if changed?(facts, latest, slack) do
       attrs =
         Map.merge(facts, %{
           organisation_id: job.organisation_id,
@@ -79,13 +88,26 @@ defmodule Core.Jobs.Capture do
 
       # Numbers the row refuses (out of range) are no signal at all.
       case JobParts.add_signal(attrs) do
-        {:ok, _row} -> {:ok, true}
+        {:ok, _row} -> viewed(scope, job, {facts[:client_last_viewed_at], latest, slack}, now)
         {:error, %Ecto.Changeset{}} -> {:ok, false}
       end
     else
       {:ok, false}
     end
   end
+
+  # AQ-10 §6.1: a moved *last viewed* is an observation of the company.
+  defp viewed(scope, job, {%DateTime{} = at, latest, slack}, now) do
+    if changed?(%{client_last_viewed_at: at}, latest_viewed(latest), slack),
+      do: :ok = Sources.last_viewed(scope, job, at, now)
+
+    {:ok, true}
+  end
+
+  defp viewed(_scope, _job, _not_read, _now), do: {:ok, true}
+
+  defp latest_viewed(%{client_last_viewed_at: %DateTime{} = at}), do: %{client_last_viewed_at: at}
+  defp latest_viewed(_none), do: nil
 
   @doc """
   Whether `facts` (what this capture read; `nil` is "not shown") differ from

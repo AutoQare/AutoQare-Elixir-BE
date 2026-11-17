@@ -4,7 +4,7 @@ defmodule Core.Access do
   a scope, an action and a subject in, a decision out. No Repo, no clock.
 
   **A row the caller may not know exists is `:not_found`, never
-  `:forbidden`** (mCart's rule): a team the caller is not in, a customer
+  `:forbidden`** (tCart's rule): a team the caller is not in, a customer
   no team of theirs serves, another customer's profile from the portal —
   each answers as if it did not exist. A refusal on a subject the caller
   can see is words: a team lead removing another lead (raised by the
@@ -31,11 +31,13 @@ defmodule Core.Access do
   | `{:retention, team}` | `team_id`: `:preview`, the system admin's and the team's leads' (AQ-04B QP4b-7) |
   | `{:contact, c}` · `{:conversation, c}` · `{:message, m}` · `{:meeting, m}` | AQ-06 §4, decided by `Core.Access.Conversations` on their leads |
   | `{:approval, a}` · `{:approval_request, r}` · `{:approval_comment, c}` · `{:approval_policy, p}` | AQ-07 §4, decided by `Core.Access.Approvals` (an approval on a lead by P4a's rules) |
+  | `{:behaviour, s}` · `{:watch, w}` | AQ-10 §4, decided by `Core.Access.Behaviour`: a company's or contact's `team_ids`; a watch's `user_id` |
   | `{:pipeline, key}` | — (AQ-04A §4.2: the organisation's) |
   | `{:share_link, link}` | `organisation_id`, `created_by_user_id`, `team_id` (the item's team; AQ-03B §3.3) |
   | `:extension` | — (AQ-05 §4: `:connect`, `:use`, `:report_misses` for staff; `:list_devices`, `:read_health`, `:read_configs` the system admin's) |
   | `{:device, device}` | `organisation_id`, `user_id`: `:read`, `:disconnect` (AQ-05 §4) |
   | `:people` · `:self` | — |
+  | `{:dashboard, d}` | `:me` (any staff), `:all` (the system admin), or `%{team_id}` (its team leads and the system admin): `:read` (AQ-11 §6); anyone else finds nothing |
 
   ## The matrix, in one sentence per chair (AQ-04A §4.0)
 
@@ -47,13 +49,10 @@ defmodule Core.Access do
   edit a profile's **facts** but not its **pitch** (QP1-7), and have full
   run of channels and documents. A **customer** reads and edits their own:
   contact details, pitch and facts, channels, documents — and nothing of
-  anyone else's. `Core.AccessMatrixTest` asserts every cell,
-  `Core.TaskAccessMatrixTest` the task rows of AQ-02 §6.3,
-  `Core.JobAccessMatrixTest` the job and company rows of AQ-03 §4.3 and
-  `Core.LeadAccessMatrixTest` the lead rows of AQ-04A §4.3,
-  `Core.ExtensionAccessMatrixTest` the extension's of AQ-05 §4, and
-  `Core.ConversationAccessMatrixTest` and `Core.MeetingAccessMatrixTest`
-  AQ-06 §4's, and `Core.ApprovalAccessMatrixTest` AQ-07 §4's.
+  anyone else's. `Core.AccessMatrixTest` asserts every cell, `Core.TaskAccessMatrixTest` AQ-02 §6.3's,
+  `Core.JobAccessMatrixTest` AQ-03 §4.3's (jobs, companies), `Core.LeadAccessMatrixTest` AQ-04A §4.3's,
+  `Core.ExtensionAccessMatrixTest` AQ-05 §4's, `Core.ConversationAccessMatrixTest` and
+  `Core.MeetingAccessMatrixTest` AQ-06 §4's, `Core.ApprovalAccessMatrixTest` AQ-07's, `Core.BehaviourAccessMatrixTest` AQ-10's.
 
   **The extension acts as the person who connected it** (AQ-05 QP5-6):
   their own scope, with `via: :extension`, decided here exactly as in the
@@ -61,12 +60,8 @@ defmodule Core.Access do
   rows of their own.
   """
 
-  alias Core.Access.Approvals
-  alias Core.Access.Channels
-  alias Core.Access.Conversations
-  alias Core.Access.Jobs
-  alias Core.Access.Leads
-  alias Core.Access.Tasks
+  alias Core.Access.{Approvals, Behaviour, Channels, Conversations}
+  alias Core.Access.{Dashboards, Jobs, Leads, Tasks}
   alias Data.Scope
 
   @type action :: atom()
@@ -95,15 +90,18 @@ defmodule Core.Access do
           | {:approval_request, map()}
           | {:approval_comment, map()}
           | {:approval_policy, map()}
+          | {:behaviour, map()}
+          | {:watch, map()}
           | {:pipeline, term()}
           | {:share_link, map()}
           | :extension
           | {:device, map()}
           | :people
           | :self
-  @type refusal :: {:error, :not_found | :not_reviewer | {:forbidden, String.t()}}
+          | {:dashboard, :me | :all | map()}
+  @type refusal :: {:error, atom() | {:forbidden, String.t()}}
 
-  @team_lead_actions [:read_settings, :update_settings, :invite_member, :remove_member]
+  @team_lead_actions ~w(read_settings update_settings invite_member remove_member set_target)a
   @admin_team_actions [:update, :archive, :change_role]
 
   @customer_lead_actions [:update, :change_status, :write_note, :invite]
@@ -322,6 +320,9 @@ defmodule Core.Access do
 
   defp decide(scope, action, {:approval_policy, p}), do: Approvals.decide_policy(scope, action, p)
 
+  defp decide(scope, action, {:behaviour, s}), do: Behaviour.decide(scope, action, s)
+  defp decide(scope, action, {:watch, w}), do: Behaviour.decide_watch(scope, action, w)
+
   # ── Pipelines (AQ-04A §4.2, QP4a-2): the organisation's ─────────────────────
 
   defp decide(scope, :read, {:pipeline, _key}) do
@@ -393,6 +394,9 @@ defmodule Core.Access do
 
   defp decide(%Scope{user: %{id: _id}}, action, :self) when action in [:read_self, :update_self],
     do: :ok
+
+  # AQ-11 §6: the dashboards, `Core.Access.Dashboards`.
+  defp decide(scope, action, {:dashboard, d}), do: Dashboards.decide(scope, action, d)
 
   defp decide(_scope, _action, _subject), do: {:error, :not_found}
 

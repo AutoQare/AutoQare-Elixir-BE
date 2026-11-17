@@ -5,13 +5,15 @@ defmodule Core.Organisation.Teams do
   AQ-04A §8.5 settles who: **the system admin** makes, renames and archives
   teams and changes roles; **a team lead** runs their team's settings and
   removes its staff (never another lead: "Only the system admin can do
-  that."); a member reads. One guard, tested: **a team keeps at least one
+  that.") and sets a member's daily target (AQ-11 §5); a member reads. One guard, tested: **a team keeps at least one
   lead while it has members**.
   """
 
   alias Core.Access
   alias Core.Audit
   alias Core.Broadcast
+  alias Core.Dashboards
+  alias Core.Notifications.Account, as: AccountNotices
   alias Core.Realtime
   alias Data.Accounts
   alias Data.Customers
@@ -159,10 +161,56 @@ defmodule Core.Organisation.Teams do
 
   # ── Members ─────────────────────────────────────────────────────────────────
 
-  @doc "`GET /teams/:id/members`: the open memberships with their people."
-  @spec list_members(Scope.t(), binary()) :: {:ok, [TeamMember.t()]} | {:error, term()}
-  def list_members(%Scope{} = scope, id) do
-    with {:ok, team} <- fetch(scope, :list_members, id), do: {:ok, Teams.list_members(team.id)}
+  @doc """
+  `GET /teams/:id/members`: the open memberships with their people, each
+  with its `daily_target` and (AQ-11 §7.4) `target_today` at `now`.
+  """
+  @spec list_members(Scope.t(), binary(), DateTime.t()) ::
+          {:ok, [TeamMember.t()]} | {:error, term()}
+  def list_members(%Scope{} = scope, id, %DateTime{} = now \\ Core.Clock.now()) do
+    with {:ok, team} <- fetch(scope, :list_members, id),
+         do: {:ok, Dashboards.with_targets(scope, Teams.list_members(team.id), now)}
+  end
+
+  @doc """
+  `PATCH /teams/:id/members/:user_id {daily_target: n | null}` (AQ-11 §5,
+  §7.4): the member's own daily target in this team — `null` gives them
+  back their profiles' sum — by the team's leads and the system admin
+  (staff: "Only a team lead can do that in this team."); a number below 0
+  is a field error. Audited. Answers the member with `target_today` at
+  `now`.
+  """
+  @spec update_member(Scope.t(), binary(), binary(), map(), DateTime.t()) ::
+          {:ok, TeamMember.t()} | {:error, term()}
+  def update_member(%Scope{} = scope, team_id, user_id, params, %DateTime{} = now) do
+    params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
+
+    with {:ok, team} <- fetch(scope, :set_target, team_id),
+         true <- Map.has_key?(params, "daily_target") || {:error, {:missing, [:daily_target]}},
+         %TeamMember{} = member <- Teams.get_open_member(team.id, user_id) || {:error, :not_found},
+         {:ok, changed} <- set_target(scope, member, params, now) do
+      [answer] = Dashboards.with_targets(scope, [%{changed | user: member.user, team: team}], now)
+      {:ok, answer}
+    end
+  end
+
+  defp set_target(scope, member, params, now) do
+    Repo.transaction(fn ->
+      case Teams.set_target(member, Map.take(params, ["daily_target"])) do
+        {:ok, changed} ->
+          {:ok, _event} =
+            Audit.record(scope, "target_changed", changed,
+              before: Map.put(member_snapshot(member), "daily_target", member.daily_target),
+              after: Map.put(member_snapshot(changed), "daily_target", changed.daily_target),
+              now: now
+            )
+
+          changed
+
+        {:error, changeset} ->
+          Repo.rollback(changeset)
+      end
+    end)
   end
 
   @doc """
@@ -182,6 +230,12 @@ defmodule Core.Organisation.Teams do
                Teams.add_member(%{team_id: team.id, user_id: user.id, role: role, joined_at: now}) do
           {:ok, _event} =
             Audit.record(scope, "joined", member, after: member_snapshot(member), now: now)
+
+          # AQ-10B §5.1 A11: told unless they added themselves (accepting).
+          :ok =
+            Core.Notifications.send_events(
+              AccountNotices.team_changed(scope, team, user.id, :added, now)
+            )
 
           {:ok, %{member | user: Accounts.with_person(user), team: team}}
         end
@@ -208,10 +262,17 @@ defmodule Core.Organisation.Teams do
             after: member_snapshot(changed)
           )
 
-        %{changed | user: member.user, team: team}
+        {%{changed | user: member.user, team: team}, role_told(scope, team, member, changed)}
       end)
+      |> sent()
+      |> with_target(scope)
     end
   end
+
+  defp with_target({:ok, member}, scope),
+    do: {:ok, hd(Dashboards.with_targets(scope, [member], Core.Clock.now()))}
+
+  defp with_target(other, _scope), do: other
 
   @doc """
   `DELETE /teams/:id/members/:user_id`: the membership ends (`left_at`); the
@@ -230,11 +291,25 @@ defmodule Core.Organisation.Teams do
         {:ok, _event} =
           Audit.record(scope, "removed", left, before: member_snapshot(member), now: now)
 
-        :ok
+        {:ok, AccountNotices.team_changed(scope, team, member.user_id, :removed, now)}
       end)
+      |> sent()
       |> elem(1)
     end
   end
+
+  # AQ-10B §5.1 A11: a role changed is told to its person.
+  defp role_told(_scope, _team, %{role: role}, %{role: role}), do: []
+
+  defp role_told(scope, team, member, changed),
+    do:
+      AccountNotices.team_changed(
+        scope,
+        team,
+        member.user_id,
+        {:role, changed.role},
+        Core.Clock.now()
+      )
 
   defp role(role) when is_atom(role) and role in [:lead, :member], do: {:ok, role}
 
@@ -280,4 +355,11 @@ defmodule Core.Organisation.Teams do
       "user_id" => member.user_id,
       "role" => to_string(member.role)
     }
+
+  defp sent({:ok, {value, events}}) do
+    :ok = Core.Notifications.send_events(events)
+    {:ok, value}
+  end
+
+  defp sent(other), do: other
 end

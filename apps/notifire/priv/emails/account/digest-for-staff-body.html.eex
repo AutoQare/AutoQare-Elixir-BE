@@ -1,0 +1,7 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph(@body) %>
+<%= list(@items) %>
+<%= facts(@facts) %>
+<%= button("Open your notifications", @url) %>
+<%= link(@url) %>

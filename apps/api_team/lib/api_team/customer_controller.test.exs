@@ -21,6 +21,26 @@ defmodule ApiTeam.CustomerControllerTest do
     }
   end
 
+  test "GET /customers/:id/activity takes the audit log's $where", %{admin: admin, imran: imran} do
+    assert call(admin, :patch, "/v1/customers/#{imran.id}", %{display_name: "Imran K"}).status ==
+             200
+
+    path = "/v1/customers/#{imran.id}/activity"
+    assert [%{"action" => "updated"} | _] = body(call(admin, :get, path))["items"]
+
+    assert [%{"action" => "updated"}] =
+             body(call(admin, :get, path <> "?$where[action][$EQUAL]=updated"))["items"]
+
+    assert body(call(admin, :get, path <> "?$where[action][$EQUAL]=deleted"))["items"] == []
+
+    assert body(call(admin, :get, path <> "?$where[occurred_at][$CAST_TO_DATE_LTE]=2000-01-01"))[
+             "items"
+           ] == []
+
+    refused = call(admin, :get, path <> "?$where[team_id][$EQUAL]=#{imran.id}")
+    assert refused.status == 422 and body(refused)["error"]["code"] == "invalid_filter"
+  end
+
   test "POST /customers (201, shape), GET list with filters, GET/PATCH /customers/:id, 404 across teams",
        %{
          lead: lead,
@@ -68,10 +88,33 @@ defmodule ApiTeam.CustomerControllerTest do
     refute Enum.any?(body(conn), &(&1["id"] == imran.id))
 
     assert [%{"id" => ^id}] =
-             body(call(lead, :get, "/v1/customers?q=tanw&status=invited"))
+             body(
+               call(
+                 lead,
+                 :get,
+                 "/v1/customers?$where[q][$ILIKE]=%25tanw%25&$where[status][$EQUAL]=invited"
+               )
+             )
 
-    assert [] = body(call(lead, :get, "/v1/customers?status=active"))
-    assert call(lead, :get, "/v1/customers?status=pirate").status == 422
+    assert [%{"id" => ^id}] =
+             body(
+               call(
+                 lead,
+                 :get,
+                 "/v1/customers?$where[status][$IN][]=invited&$where[status][$IN][]=active"
+               )
+             )
+
+    assert [] = body(call(lead, :get, "/v1/customers?$where[status][$EQUAL]=active"))
+    assert [] = body(call(lead, :get, "/v1/customers?$where[mine][$EQUAL]=true"))
+
+    pirate = call(lead, :get, "/v1/customers?$where[status][$EQUAL]=pirate")
+    assert pirate.status == 422
+    assert body(pirate)["error"]["code"] == "invalid_filter"
+    assert Map.keys(body(pirate)["error"]["details"]) == ["status"]
+
+    refused = call(lead, :get, "/v1/customers?status=active&$where[owner][$EQUAL]=me")
+    assert refused.status == 422 and body(refused)["error"]["details"]["owner"]
 
     assert body(call(member, :get, "/v1/customers/#{id}"))["display_name"] == "Tanweer"
     assert call(member, :get, "/v1/customers/#{imran.id}").status == 404

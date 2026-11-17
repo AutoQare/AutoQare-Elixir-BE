@@ -1,0 +1,7 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Open delivery health", @url) %>
+<%= link(@url) %>
+<%= paragraph("Some background work gave up after its retries. The server log has the details.") %>

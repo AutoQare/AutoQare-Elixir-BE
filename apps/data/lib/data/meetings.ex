@@ -44,26 +44,41 @@ defmodule Data.Meetings do
 
   @doc """
   The meetings of a team's leads (`team_id`) or a customer's
-  (`customer_id`): between `from` and `to` by start when given, else every
-  scheduled (or proposed, AQ-09) one that has not ended by `now`. By start.
+  (`customer_id`), narrowed by `where` (the list's `$where`,
+  `Data.Filters.Meetings`; the upcoming ones — scheduled or proposed, not
+  ended at `context.now` — when it names none of `upcoming`, `starts_at`
+  and `status`: a person who names a time or a status asks for those
+  meetings, a cancelled one included). By start, at most 500:
+  `{:ok, meetings}`, or the 422 `invalid_filter`.
   """
-  @spec list(keyword()) :: [Meeting.t()]
-  def list(opts) do
-    from(m in Meeting,
-      join: l in Lead,
-      on: l.id == m.lead_id,
-      as: :lead,
-      join: j in assoc(l, :job),
-      as: :job,
-      join: p in assoc(l, :profile),
-      as: :profile,
-      order_by: [asc: m.starts_at, asc: m.id],
-      limit: 500
-    )
-    |> narrow(opts)
-    |> window(opts[:from], opts[:to], opts[:now])
-    |> load_all()
+  @spec list(keyword(), term(), Data.Filters.context()) ::
+          {:ok, [Meeting.t()]} | {:error, term()}
+  def list(opts, where, context) do
+    base =
+      from(m in Meeting,
+        join: l in Lead,
+        on: l.id == m.lead_id,
+        as: :lead,
+        join: j in assoc(l, :job),
+        as: :job,
+        join: p in assoc(l, :profile),
+        as: :profile,
+        order_by: [asc: m.starts_at, asc: m.id],
+        limit: 500
+      )
+      |> narrow(opts)
+
+    where =
+      if named?(where, "starts_at") or named?(where, "status"),
+        do: where,
+        else: Data.Filters.default(where, "upcoming", %{"$EQUAL" => true})
+
+    with {:ok, query} <- Data.Filters.where(base, Data.Filters.Meetings, where, context),
+         do: {:ok, load_all(query)}
   end
+
+  # A field the person sent with a value (an empty one is no filter).
+  defp named?(where, field), do: Data.Filters.value(where, field) not in [nil, "", [], %{}]
 
   defp narrow(query, opts) do
     cond do
@@ -71,15 +86,6 @@ defmodule Data.Meetings do
       opts[:customer_id] -> where(query, [profile: p], p.customer_id == ^opts[:customer_id])
       true -> where(query, false)
     end
-  end
-
-  defp window(query, nil, nil, %DateTime{} = now),
-    do: where(query, [m], m.status in [:scheduled, :proposed] and m.ends_at > ^now)
-
-  defp window(query, from, to, _now) do
-    query
-    |> then(&if(from, do: where(&1, [m], m.starts_at >= ^from), else: &1))
-    |> then(&if(to, do: where(&1, [m], m.starts_at < ^to), else: &1))
   end
 
   @doc """

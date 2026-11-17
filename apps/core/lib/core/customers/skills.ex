@@ -15,13 +15,13 @@ defmodule Core.Customers.Skills do
 
   @fields ~w(name slug category archived_at)a
 
-  @doc "`GET /skills?q`."
+  @doc "`GET /skills?$where`: `$where` is `Data.Filters.Skills`' (`q`, `category`)."
   @spec list(Scope.t(), map()) :: {:ok, [Skill.t()]} | {:error, term()}
   def list(%Scope{organisation: organisation} = scope, params \\ %{}) do
     params = Customers.stringify(params)
 
     with :ok <- Access.why_not(scope, :read, {:skill, %{}}),
-         do: {:ok, Store.list(organisation.id, q: params["q"])}
+         do: Store.filtered(organisation.id, params["$where"])
   end
 
   @doc "`POST /skills {name, category, slug?}`."

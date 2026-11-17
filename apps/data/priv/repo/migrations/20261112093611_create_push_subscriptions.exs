@@ -2,7 +2,7 @@ defmodule Data.Repo.Migrations.CreatePushSubscriptions do
   use Ecto.Migration
 
   @moduledoc """
-  A browser that takes Web Push for a person (AQ-08 §5, QP8-14; mCart's):
+  A browser that takes Web Push for a person (AQ-08 §5, QP8-14; tCart's):
   the push service's endpoint and the browser's keys, the app it was made
   on (`push_apps`: `team` the console, `client` the portal), when it was
   last used and when it last failed.

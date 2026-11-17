@@ -39,7 +39,8 @@ defmodule ApiTeam.ExtensionControllerTest do
     health = body(conn)
 
     assert Map.keys(health) |> Enum.sort() == ~w(devices sites)
-    assert [linkedin, upwork] = health["sites"]
+    assert [linkedin, upwork | new_sites] = health["sites"]
+    assert Enum.map(new_sites, & &1["site"]) == ~w(indeed yc_waas wellfound)
     assert Map.keys(linkedin) |> Enum.sort() == ~w(config last_capture_at misses site)
     assert linkedin["site"] == "linkedin" and upwork["site"] == "upwork"
     assert linkedin["config"]["version"] == config.version
@@ -55,18 +56,19 @@ defmodule ApiTeam.ExtensionControllerTest do
         do: assert(call(who, :get, "/v1/extension/health").status == 404)
   end
 
-  test "GET /extension/configs?site: newest first, the system admin's", c do
+  test "GET /extension/configs?$where[site]: newest first, the system admin's", c do
     older = config_fixture(:upwork)
     newer = config_fixture(:upwork)
 
-    conn = call(c.dawud, :get, "/v1/extension/configs", %{"site" => "upwork"})
+    conn = call(c.dawud, :get, "/v1/extension/configs?$where[site][$EQUAL]=upwork")
     assert conn.status == 200
     assert [first, second | _] = body(conn)
     assert {first["version"], second["version"]} == {newer.version, older.version}
     assert Map.keys(first) |> Enum.sort() == ~w(published_at sha256 site version)
     assert first["sha256"] == newer.sha256
 
-    assert call(c.dawud, :get, "/v1/extension/configs", %{"site" => "indeed"}).status == 422
-    assert call(c.hira, :get, "/v1/extension/configs", %{"site" => "upwork"}).status == 404
+    refused = call(c.dawud, :get, "/v1/extension/configs?$where[site][$EQUAL]=monster")
+    assert refused.status == 422 and body(refused)["error"]["code"] == "invalid_filter"
+    assert call(c.hira, :get, "/v1/extension/configs?$where[site][$EQUAL]=upwork").status == 404
   end
 end

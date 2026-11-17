@@ -1,6 +1,6 @@
 defmodule Data.Notifications.PushSubscriptions do
   @moduledoc """
-  The browsers that take Web Push for a person (AQ-08 §5, QP8-14; mCart's),
+  The browsers that take Web Push for a person (AQ-08 §5, QP8-14; tCart's),
   storage only: one row per endpoint, the app it was made on, when it was
   last used and last failed. **A known endpoint moves** to whoever
   subscribes it next, with their app: the same browser, another person.

@@ -17,7 +17,8 @@ defmodule ApiTeam.TaskController do
   action_fallback ApiShared.FallbackController
 
   def search(conn, params) do
-    with {:ok, tasks} <- Tasks.search(conn.assigns.scope, params["q"]), do: json(conn, tasks)
+    with {:ok, tasks} <- Tasks.search(conn.assigns.scope, params, Clock.now()),
+         do: json(conn, tasks)
   end
 
   def create(conn, params) do

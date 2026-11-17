@@ -13,10 +13,10 @@ defmodule ApiShared.JobsJSON do
 
   @person ~w(user_id name photo_url)a
   @company ~w(id name domain website_url linkedin_url size_band industry hq_country notes_md
-              open_jobs created_by inserted_at)a
+              time_zone time_zone_source open_jobs created_by inserted_at)a
   @money ~w(min_minor max_minor currency period source is_estimate is_undisclosed text)a
   @row ~w(id title team company source engagement workplace remote_scope onsite_locations money
-          posted_on first_seen_at status archived_at best_suggestion)a
+          posted_on first_seen_at status archived_at best_suggestion origin_kind alert)a
   # Every column of `jobs` the sheet adds to the row, by its column name (§7.1).
   @columns ~w(source_url canonical_key source_job_id origin last_seen_at is_reposted poster_name
               description_md description_html seniority category openings allowed_countries
@@ -39,7 +39,12 @@ defmodule ApiShared.JobsJSON do
   @doc "`GET /companies?q`: `[{id, name, domain}]`."
   def companies(list), do: Enum.map(list, &Map.take(&1, [:id, :name, :domain]))
 
-  @doc "A company's card (`GET /companies/:id`, every company write), or `nil`."
+  @doc """
+  A company's card (`GET /companies/:id`, every company write), or `nil`.
+  AQ-10 §11.4: `time_zone`, `time_zone_source`, and on those answers the
+  `behaviour` summary (`ApiShared.BehaviourJSON`; `null` for a caller who
+  may not read it).
+  """
   def company(nil), do: nil
 
   def company(c) do
@@ -47,6 +52,11 @@ defmodule ApiShared.JobsJSON do
     |> Map.take(@company)
     |> Map.update!(:open_jobs, &Enum.map(&1, fn j -> Map.take(j, [:id, :title]) end))
     |> Map.update!(:created_by, &person/1)
+    |> then(fn card ->
+      if Map.has_key?(c, :behaviour),
+        do: Map.put(card, :behaviour, ApiShared.BehaviourJSON.summary(c.behaviour)),
+        else: card
+    end)
   end
 
   @doc "The list's row."

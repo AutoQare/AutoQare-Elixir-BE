@@ -1,6 +1,6 @@
 defmodule Core.Mail do
   @moduledoc """
-  The one way `core` asks for a message to be sent (mCart's seam;
+  The one way `core` asks for a message to be sent (tCart's seam;
   CONVENTIONS §7). `core` may not name a `notifire` module, so the worker for
   each kind is read from `config :core, :mail_workers` and the message is a
   job: `Oban.Job.new/2`, never `Worker.new/1`.
@@ -41,14 +41,34 @@ defmodule Core.Mail do
   @spec enqueue!(map()) :: :ok
   def enqueue!(params), do: params |> Command.new!() |> enqueue()
 
+  @doc """
+  Enqueues a message **once ever** for the same args (AQ-10B §5.1 A2: an
+  invitation's reminders from an hourly scan): Oban's uniqueness over the
+  worker and the args, in every state.
+  """
+  @spec enqueue_once!(map()) :: :ok
+  def enqueue_once!(params) do
+    command = Command.new!(params)
+
+    case worker_for(command.kind) do
+      nil ->
+        :ok
+
+      worker ->
+        insert(command, worker,
+          unique: [period: :infinity, states: :all, fields: [:worker, :args]]
+        )
+    end
+  end
+
   @doc "The worker module for a kind, or `nil`. Public so a test can assert wiring."
   @spec worker_for(atom()) :: module() | nil
   def worker_for(kind), do: :core |> Application.get_env(:mail_workers, []) |> Keyword.get(kind)
 
-  defp insert(command, worker) do
+  defp insert(command, worker, opts \\ []) do
     command
     |> Command.to_job_args()
-    |> Oban.Job.new(worker: worker, queue: @queue, max_attempts: @max_attempts)
+    |> Oban.Job.new([worker: worker, queue: @queue, max_attempts: @max_attempts] ++ opts)
     |> Oban.insert()
     |> case do
       {:ok, _job} ->

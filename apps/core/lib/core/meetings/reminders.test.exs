@@ -160,6 +160,9 @@ defmodule Core.Meetings.RemindersTest do
     Application.put_env(:core, :dev_clock, true)
     real = DateTime.utc_now()
     starts = real |> DateTime.add(86_400 + 30 * 60, :second) |> DateTime.truncate(:second)
+    # The setup's meeting is on a fixed day: set aside, so the catch-up counts this one alone
+    # whatever day the suite runs on (on 2026-11-16 the moved clock reached it too).
+    {:ok, _cancelled} = Meetings.cancel(scope_for(c.fiza), c.meeting.id, %{}, real)
 
     {:ok, soon} =
       Meetings.schedule(

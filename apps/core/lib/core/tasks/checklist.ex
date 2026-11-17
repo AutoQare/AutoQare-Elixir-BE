@@ -3,7 +3,7 @@ defmodule Core.Tasks.Checklist do
   A task's checklist (AQ-02 §7.2, §7.3): lines added, renamed, ticked,
   removed and reordered by anyone who may change the task; ticked by the
   customer on a task given to them. Each change is a `checklist` line in
-  the activity; the order is not (mCart: tidying is not news). Every
+  the activity; the order is not (tCart: tidying is not news). Every
   verb answers the sheet.
   """
 

@@ -1,0 +1,7 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph("This is past its due date.") %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Open the task", @url) %>
+<%= link(@url) %>

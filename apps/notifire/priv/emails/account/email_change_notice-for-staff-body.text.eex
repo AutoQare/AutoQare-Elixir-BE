@@ -1,0 +1,12 @@
+Hi <%= @first_name || "there" %>,
+
+<%= @title %>
+<%= if @body do %>
+
+<%= @body %>
+<% end %>
+
+<%= facts_text(@facts) %>
+<%= if @url do %>Review your account: <%= @url %><% end %>
+
+Until the new address is confirmed, this one still signs you in. If this wasn’t you, change your password now.

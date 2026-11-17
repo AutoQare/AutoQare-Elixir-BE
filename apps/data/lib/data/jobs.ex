@@ -16,7 +16,7 @@ defmodule Data.Jobs do
   alias Data.Repo
 
   @person [person: :photo]
-  @base [:company, :team, job_skills: :skill]
+  @base [:company, :team, job_skills: :skill, origin_profile: :customer]
   @sheet [
     :team,
     company: [created_by_user: @person],
@@ -129,7 +129,9 @@ defmodule Data.Jobs do
 
   @spec create(map()) :: {:ok, Job.t()} | {:error, Ecto.Changeset.t()}
   def create(attrs) do
-    with {:ok, job} <- %Job{} |> Job.create_changeset(attrs) |> Repo.insert(),
+    id = attrs["id"] || attrs[:id]
+
+    with {:ok, job} <- %Job{id: id} |> Job.create_changeset(attrs) |> Repo.insert(),
          do: {:ok, reload(job)}
   end
 
@@ -144,6 +146,23 @@ defmodule Data.Jobs do
   def close(%Job{} = job, attrs) do
     with {:ok, updated} <- job |> Job.close_changeset(attrs) |> Repo.update(),
          do: {:ok, reload(updated)}
+  end
+
+  @doc """
+  Every organisation's jobs an alert brought (AQ-12 §7, QP12-24) that are
+  still live, first seen before `before`, with no lead in any state: what
+  `Core.Workers.AlertSweep` archives.
+  """
+  @spec unsaved_alerts_for_system(DateTime.t()) :: [Job.t()]
+  def unsaved_alerts_for_system(%DateTime{} = before) do
+    from(j in Job,
+      as: :job,
+      where:
+        j.origin_kind == :alert and is_nil(j.archived_at) and j.first_seen_at < ^before and
+          not exists(from(l in Data.Leads.Lead, where: l.job_id == parent_as(:job).id)),
+      order_by: [asc: j.first_seen_at, asc: j.id]
+    )
+    |> Repo.all()
   end
 
   @spec archive(Job.t(), DateTime.t() | nil, binary() | nil) :: {:ok, Job.t()}

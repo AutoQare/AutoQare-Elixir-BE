@@ -11,4 +11,25 @@ defmodule Data.Repo do
   use Ecto.Repo,
     otp_app: :data,
     adapter: Ecto.Adapters.Postgres
+
+  @doc """
+  `SELECT 1`: `:ok` when the database answers, else `{:error, reason}`.
+
+  The health check's question (DEPLOY-PLAN L7, `GET /health`), here because
+  this is the one app that knows Postgres exists. Short on purpose: a probe
+  that waits fifteen seconds for a dead database is a probe Jenkins times
+  out on instead of reading.
+  """
+  @spec ping() :: :ok | {:error, term()}
+  def ping do
+    case query("SELECT 1", [], timeout: 2_000, log: false) do
+      {:ok, %{rows: [[1]]}} -> :ok
+      {:ok, other} -> {:error, {:unexpected, other}}
+      {:error, reason} -> {:error, reason}
+    end
+  rescue
+    error -> {:error, error}
+  catch
+    :exit, reason -> {:error, {:exit, reason}}
+  end
 end

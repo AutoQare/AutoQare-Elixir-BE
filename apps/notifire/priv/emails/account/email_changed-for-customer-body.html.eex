@@ -1,0 +1,7 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Review your account", @url) %>
+<%= link(@url) %>
+<%= paragraph("This address no longer signs in. If this wasn’t you, tell your team now.") %>

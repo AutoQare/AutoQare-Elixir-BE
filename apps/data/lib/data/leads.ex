@@ -13,6 +13,7 @@ defmodule Data.Leads do
   import Ecto.Query, warn: false
 
   alias Data.Customers
+  alias Data.Filters.Leads, as: LeadFilters
   alias Data.Jobs.{Job, Merge}
   alias Data.Leads.{Event, Lead}
   alias Data.Repo
@@ -52,112 +53,101 @@ defmodule Data.Leads do
   def sheet(%Lead{} = lead), do: Repo.preload(lead, @sheet)
 
   @doc """
-  A team's leads for its board (§8.1): `filters` holds `archived` (only the
-  archived when true, else only the live), `visible_to` (`:all`, or a user
-  id whose own leads alone show: owner or applier), `customer_id`,
-  `profile_id`, `owner_user_id`, `sources`, `engagements`, `workplaces`
-  (atoms), `stage_key`, `pipeline_key`, `q` (normalised text: title or
-  company), `quiet_before` (last activity before this instant) and — the
-  Tracker's and P4b's board — `states`, `outcomes` (atoms) and `label_ids`
-  (wearing any of them).
+  A team's leads for its board and the Tracker (AQ-04A §8.1, AQ-04B §8.1),
+  newest activity first: `where` is the list's `$where`
+  (`Data.Filters.Leads`; `archived` defaults to `false`), `context` what
+  its overrides read (`Data.Filters.context/2`: `team_id`, `now`, the
+  zone, `rules`). `opts`: `visible_to` (`:all`, or a user id whose own
+  leads alone show: owner or applier — the team's `peer_leads` reach,
+  never a filter), `order` (`Data.Filters.TrackerSort`'s expressions; ties
+  by id). `{:ok, leads}`, or the 422 `invalid_filter`.
   """
-  @spec for_team(binary(), map()) :: [Lead.t()]
-  def for_team(team_id, filters) do
+  @spec for_team(binary(), term(), map(), keyword()) :: {:ok, [Lead.t()]} | {:error, term()}
+  def for_team(team_id, where, context, opts \\ []) do
+    where = Data.Filters.default(where, "archived", %{"$EQUAL" => false})
+    context = Map.merge(context, %{team_id: team_id, where: decoded(where)})
+
+    with {:ok, query} <-
+           Data.Filters.where(team_query(team_id), Data.Filters.Leads, where, context) do
+      {:ok,
+       query
+       |> visible_to(Keyword.get(opts, :visible_to, :all))
+       |> ordered(Keyword.get(opts, :order))
+       |> load_all()}
+    end
+  end
+
+  @doc """
+  The Tracker's `applications` (AQ-11B §11.5): how many of the ledger's
+  `applied` rows on `lead_ids` (every listed lead, all pages) match the
+  top-level `$where`'s `applied_on`, `applied_by` and `had_response`
+  together (`Data.Filters.Leads.applied_spec/2` and `applied_rows/1`, the
+  filter's own rule) — a lead applied twice counts twice, as the tiles
+  count. `nil` when `where` names none of them.
+  """
+  @spec applications([binary()], term(), map()) :: non_neg_integer() | nil
+  def applications(lead_ids, where, context) do
+    case LeadFilters.applied_spec(where, context) do
+      nil ->
+        nil
+
+      spec ->
+        spec
+        |> LeadFilters.applied_rows()
+        |> where([applied: e], e.lead_id in ^lead_ids)
+        |> Repo.aggregate(:count)
+    end
+  end
+
+  @doc """
+  The team's leads before any filter, with every binding the filters and
+  the Tracker's sort name: `lead`, `job`, `company`, `profile`,
+  `customer`, `stage`, `version`, `owner_person`, `document`.
+  """
+  @spec team_query(binary()) :: Ecto.Query.t()
+  def team_query(team_id) do
     from(l in Lead,
       as: :lead,
       join: j in assoc(l, :job),
       as: :job,
+      left_join: c in assoc(j, :company),
+      as: :company,
+      join: p in assoc(l, :profile),
+      as: :profile,
+      join: cu in assoc(p, :customer),
+      as: :customer,
+      left_join: s in assoc(l, :stage),
+      as: :stage,
+      left_join: v in assoc(l, :pipeline_version),
+      as: :version,
+      left_join: o in assoc(l, :owner_user),
+      left_join: op in assoc(o, :person),
+      as: :owner_person,
+      left_join: d in assoc(l, :document),
+      as: :document,
       where: j.team_id == ^team_id
     )
-    |> archived(Map.get(filters, :archived, false))
-    |> visible_to(Map.get(filters, :visible_to, :all))
-    |> equal(:profile_id, filters[:profile_id])
-    |> equal(:owner_user_id, filters[:owner_user_id])
-    |> customer(filters[:customer_id])
-    |> job_any(:source, filters[:sources])
-    |> job_any(:engagement, filters[:engagements])
-    |> job_any(:workplace, filters[:workplaces])
-    |> stage_key(filters[:stage_key])
-    |> pipeline_key(filters[:pipeline_key])
-    |> search(filters[:q])
-    |> quiet(filters[:quiet_before])
-    |> any_of(:state, filters[:states])
-    |> any_of(:outcome, filters[:outcomes])
-    |> labelled(filters[:label_ids])
-    |> order_by([l], desc: l.last_activity_at, desc: l.id)
-    |> load_all()
   end
+
+  defp decoded(where) do
+    case Data.Filters.decode(where) do
+      {:ok, map} -> map
+      {:error, _refusal} -> %{}
+    end
+  end
+
+  defp ordered(query, nil), do: order_by(query, [lead: l], desc: l.last_activity_at, desc: l.id)
+  defp ordered(query, []), do: ordered(query, nil)
+  defp ordered(query, exprs), do: order_by(query, ^(exprs ++ [asc: dynamic([lead: l], l.id)]))
 
   @doc "Runs a lead query with what every lead read carries."
   @spec load_all(Ecto.Queryable.t()) :: [Lead.t()]
   def load_all(query), do: query |> preload(^@base) |> Repo.all() |> Enum.map(&fill/1)
 
-  defp any_of(query, _field, nil), do: query
-  defp any_of(query, _field, []), do: query
-  defp any_of(query, field, values), do: where(query, [l], field(l, ^field) in ^values)
-
-  defp labelled(query, nil), do: query
-  defp labelled(query, []), do: query
-
-  defp labelled(query, label_ids) do
-    worn = from(ll in Data.Labels.LeadLabel, where: ll.label_id in ^label_ids, select: ll.lead_id)
-    where(query, [l], l.id in subquery(worn))
-  end
-
-  defp archived(query, true), do: where(query, [l], not is_nil(l.archived_at))
-  defp archived(query, _live), do: where(query, [l], is_nil(l.archived_at))
-
   defp visible_to(query, :all), do: query
 
   defp visible_to(query, me) when is_binary(me),
-    do: where(query, [l], l.owner_user_id == ^me or l.applied_by_user_id == ^me)
-
-  defp equal(query, _field, nil), do: query
-  defp equal(query, field, value), do: where(query, [l], field(l, ^field) == ^value)
-
-  defp customer(query, nil), do: query
-
-  defp customer(query, customer_id) do
-    query
-    |> join(:inner, [l], p in assoc(l, :profile), as: :profile)
-    |> where([profile: p], p.customer_id == ^customer_id)
-  end
-
-  defp job_any(query, _field, nil), do: query
-  defp job_any(query, _field, []), do: query
-  defp job_any(query, field, values), do: where(query, [job: j], field(j, ^field) in ^values)
-
-  defp stage_key(query, nil), do: query
-
-  defp stage_key(query, key) do
-    query
-    |> join(:inner, [l], s in assoc(l, :stage), as: :stage)
-    |> where([stage: s], s.key == ^key)
-  end
-
-  defp pipeline_key(query, nil), do: query
-
-  defp pipeline_key(query, key) do
-    query
-    |> join(:inner, [l], v in assoc(l, :pipeline_version), as: :version)
-    |> where([version: v], v.pipeline_key == ^key)
-  end
-
-  defp search(query, nil), do: query
-
-  defp search(query, qn) do
-    like = "%" <> Data.Companies.escape_like(qn) <> "%"
-
-    query
-    |> join(:left, [job: j], c in assoc(j, :company), as: :company)
-    |> where(
-      [job: j, company: c],
-      fragment("lower(unaccent(?)) LIKE ?", j.title, ^like) or like(c.name_normalized, ^like)
-    )
-  end
-
-  defp quiet(query, nil), do: query
-  defp quiet(query, %DateTime{} = before), do: where(query, [l], l.last_activity_at < ^before)
+    do: where(query, [lead: l], l.owner_user_id == ^me or l.applied_by_user_id == ^me)
 
   @doc "The leads on these jobs, every one (the guard and the job's panel narrow them)."
   @spec for_jobs([binary()]) :: [Lead.t()]
@@ -272,6 +262,14 @@ defmodule Data.Leads do
     |> Repo.all()
   end
 
+  @doc "A job's open leads (not Done, not archived), as every lead read carries (AQ-10B §5.3)."
+  @spec open_for_job(binary()) :: [Lead.t()]
+  def open_for_job(job_id) do
+    from(l in Lead, where: l.job_id == ^job_id and l.state != :done and is_nil(l.archived_at))
+    |> Repo.all()
+    |> Enum.map(&load/1)
+  end
+
   @doc "Every lead of a job, re-pointed to another (a merge). Answers how many."
   @spec move_to_job(binary(), binary()) :: non_neg_integer()
   def move_to_job(from_job_id, to_job_id) do
@@ -297,29 +295,27 @@ defmodule Data.Leads do
   end
 
   @doc """
-  A page of a lead's ledger, newest first (AQ-04B §8.1 History): `kinds`
-  narrows (nil or `[]`: every kind), `before` is the event to start after
-  (its `{occurred_at, recorded_at, id}`), `visibility` narrows to one
-  (`:customer` for the portal). Reads `limit + 1` so the caller knows if
-  there is more.
+  A page of a lead's ledger, newest first (AQ-04B §8.1 History): `where`
+  is the list's `$where` (`Data.Filters.History`: `kind`); `opts`
+  `before` (the event to start after: its `{occurred_at, recorded_at,
+  id}`), `visibility` (`:customer` for the portal) and `limit`. Reads
+  `limit + 1` so the caller knows if there is more: `{:ok, events}`, or
+  the 422 `invalid_filter`.
   """
-  @spec history(binary(), keyword()) :: [Event.t()]
-  def history(lead_id, opts) do
-    from(e in Event,
-      where: e.lead_id == ^lead_id,
-      order_by: [desc: e.occurred_at, desc: e.recorded_at, desc: e.id],
-      limit: ^(Keyword.fetch!(opts, :limit) + 1),
-      preload: [:lead_note, actor_user: ^@person]
-    )
-    |> kinds(opts[:kinds])
-    |> visibility(opts[:visibility])
-    |> before(opts[:before])
-    |> Repo.all()
-  end
+  @spec history(binary(), term(), keyword()) :: {:ok, [Event.t()]} | {:error, term()}
+  def history(lead_id, where, opts) do
+    base =
+      from(e in Event,
+        where: e.lead_id == ^lead_id,
+        order_by: [desc: e.occurred_at, desc: e.recorded_at, desc: e.id],
+        limit: ^(Keyword.fetch!(opts, :limit) + 1),
+        preload: [:lead_note, actor_user: ^@person]
+      )
 
-  defp kinds(query, nil), do: query
-  defp kinds(query, []), do: query
-  defp kinds(query, kinds), do: where(query, [e], e.kind in ^kinds)
+    with {:ok, query} <- Data.Filters.where(base, Data.Filters.History, where) do
+      {:ok, query |> visibility(opts[:visibility]) |> before(opts[:before]) |> Repo.all()}
+    end
+  end
 
   defp visibility(query, nil), do: query
   defp visibility(query, v), do: where(query, [e], e.visibility == ^v)

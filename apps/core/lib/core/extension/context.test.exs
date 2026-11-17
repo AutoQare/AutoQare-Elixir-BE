@@ -151,7 +151,7 @@ defmodule Core.Extension.ContextTest do
     refute ctx.me.is_admin
 
     assert {:error, {:invalid, %{"site" => _}}} =
-             Context.get(c.s_fiza, %{"site" => "indeed"}, @now)
+             Context.get(c.s_fiza, %{"site" => "monster"}, @now)
   end
 
   test "an Upwork page reads an Upwork account: a LinkedIn link there names nothing", c do

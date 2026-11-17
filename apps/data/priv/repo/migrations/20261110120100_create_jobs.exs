@@ -22,6 +22,14 @@ defmodule Data.Repo.Migrations.CreateJobs do
 
   The array columns are checked in the database: country codes by shape,
   regions against the vocabulary with `<@`.
+
+  AQ-12 §11.4: `origin_kind` says what brought a job in beyond its origin
+  — a Fiverr `brief · inquiry · order` (only with `source = 'fiverr'`) or
+  an `alert` email (only with `origin = 'email'`) — and
+  `origin_profile_id` the profile whose alert it was (nilified when the
+  profile goes). A Fiverr job may have no `source_url`: it is keyed by its
+  conversation (`fiverr:conversation:{id}`) or its own id
+  (`fiverr:job:{id}`), never by a link (`source_url_present`).
   """
 
   def change do
@@ -35,10 +43,12 @@ defmodule Data.Repo.Migrations.CreateJobs do
 
       add(:team_id, references(:teams, type: :uuid, on_delete: :restrict), null: false)
       add(:source, :string, null: false)
-      add(:source_url, :text, null: false)
+      add(:source_url, :text)
       add(:canonical_key, :text, null: false)
       add(:source_job_id, :string)
       add(:origin, :string, null: false, default: "manual")
+      add(:origin_kind, :string)
+      add(:origin_profile_id, references(:profiles, type: :uuid, on_delete: :nilify_all))
       add(:first_seen_at, :timestamptz, null: false)
       add(:last_seen_at, :timestamptz, null: false)
       add(:is_reposted, :boolean, null: false, default: false)
@@ -116,6 +126,19 @@ defmodule Data.Repo.Migrations.CreateJobs do
 
     create(
       constraint(:jobs, :origin_known, check: "origin IN ('manual','extension','email','import')")
+    )
+
+    create(
+      constraint(:jobs, :origin_kind_known,
+        check:
+          "origin_kind IS NULL OR " <>
+            "(origin_kind IN ('brief','inquiry','order') AND source = 'fiverr') OR " <>
+            "(origin_kind = 'alert' AND origin = 'email')"
+      )
+    )
+
+    create(
+      constraint(:jobs, :source_url_present, check: "source_url IS NOT NULL OR source = 'fiverr'")
     )
 
     create(
@@ -295,6 +318,7 @@ defmodule Data.Repo.Migrations.CreateJobs do
     create(index(:jobs, [:organisation_id, :archived_at]))
     create(index(:jobs, [:company_id]))
     create(index(:jobs, [:created_by_user_id]))
+    create(index(:jobs, [:origin_profile_id]))
     create(index(:jobs, [:closed_by_user_id]))
     create(index(:jobs, [:archived_by_user_id]))
 

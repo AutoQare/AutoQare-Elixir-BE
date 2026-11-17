@@ -20,6 +20,7 @@ defmodule Core.Extension do
   alias Core.Accounts.Device, as: Agent
   alias Core.Audit
   alias Core.Auth.Guardian
+  alias Core.Notifications.Account, as: AccountNotices
   alias Data.Accounts
   alias Data.Accounts.{User, UserToken}
   alias Data.Devices
@@ -70,8 +71,16 @@ defmodule Core.Extension do
          :ok <- staff(scope),
          {:ok, version} <- version(params) do
       Repo.transaction(fn -> exchange(scope, token, version, client, now) end)
+      |> sent()
     end
   end
+
+  defp sent({:ok, {value, events}}) do
+    :ok = Core.Notifications.send_events(events)
+    {:ok, value}
+  end
+
+  defp sent(other), do: other
 
   defp staff(scope) do
     case Access.why_not(scope, :connect, :extension) do
@@ -110,7 +119,12 @@ defmodule Core.Extension do
       }
 
       {:ok, tokens} = Guardian.tokens_for(scope.user, session)
-      %{device: device, tokens: tokens, scope: scope}
+
+      # AQ-10B §5.7 E1 (locked): told even though they connected it.
+      events =
+        AccountNotices.extension_connected(device, Scope.organisation_id(scope), now)
+
+      {%{device: device, tokens: tokens, scope: scope}, events}
     else
       :used -> Repo.rollback(:token_invalid)
       {:error, reason} -> Repo.rollback(reason)
@@ -179,8 +193,10 @@ defmodule Core.Extension do
             now: now
           )
 
-        revoked
+        # AQ-10B §5.7 E2: told when someone else disconnected it.
+        {revoked, AccountNotices.extension_off(scope, revoked, now)}
       end)
+      |> sent()
     else
       %Device{} -> {:error, :not_found}
       {:error, _reason} = error -> error

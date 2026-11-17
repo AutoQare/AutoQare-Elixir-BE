@@ -1,0 +1,8 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph("No mail has reached your team from your Gmail for 14 days.") %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Open AutoQare", @url) %>
+<%= link(@url) %>
+<%= paragraph("Check that your Gmail still forwards to your team’s address.") %>

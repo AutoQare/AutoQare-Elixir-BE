@@ -13,8 +13,12 @@ defmodule Api.Router do
   path and the server can move while an old extension build keeps working.
 
   **`GET /info` at the root is the one unversioned route**, and it is not a
-  client route; the scope below carries the reason. Anything else answers
+  client route; the scope below carries the reason. **`GET /health`** sits
+  beside it for the deploy check (DEPLOY-PLAN L7). Anything else answers
   `404` in the house error shape.
+
+  **`POST /unsubscribe`** (AQ-10B §11.4) is an email's one-click
+  unsubscribe, with no app's token.
 
   **`POST /inbound/email`** (AQ-09 §6.2, PLAN §15.1) is the mail
   provider's webhook, at the root and outside the three apps: no app's
@@ -35,7 +39,7 @@ defmodule Api.Router do
   ApiShared.Routes.shared_pipelines()
 
   # **The deploy pipeline's health check, and the only unversioned route**
-  # (copied from mCart, whose Jenkins step curls `$SITE/info` on every
+  # (copied from tCart, whose Jenkins step curls `$SITE/info` on every
   # backend it deploys). Serving it at the root keeps that step identical for
   # all of them; a per-app path would put every pipeline in the blast radius
   # of a change here.
@@ -47,6 +51,20 @@ defmodule Api.Router do
     pipe_through [:api, :aq_shared]
 
     get "/info", InfoController, :show
+
+    # **Is the database answering?** (DEPLOY-PLAN L7): `/info` says which
+    # build; this one runs `SELECT 1` and answers 503 when it fails, so the
+    # deploy check can tell a running node from a working one.
+    get "/health", HealthController, :show
+  end
+
+  # **One-click unsubscribe** (AQ-10B §11.4): an email's footer and its
+  # `List-Unsubscribe` header post the signed token here, no sign-in. The
+  # apps' `/unsubscribe` page posts it from the browser (CORS: the endpoint).
+  scope "/", Api do
+    pipe_through [:aq_shared]
+
+    post "/unsubscribe", UnsubscribeController, :create
   end
 
   # **Forwarded mail** (AQ-09 §6.2): the provider posts each delivery here
@@ -82,6 +100,14 @@ defmodule Api.Router do
 
       get "/push/json", DevController, :push_outbox
       delete "/push/json", DevController, :clear_push_outbox
+    end
+
+    # **The email gallery** (AQ-10B §7.3): every template with sample data.
+    scope "/dev", ApiTeam do
+      pipe_through [:aq_shared]
+
+      get "/emails", DevEmailController, :index
+      get "/emails/:kind", DevEmailController, :show
     end
 
     # **The dev clock** (AQ-04B §7.6, QP4b-1): any signed-in account moves

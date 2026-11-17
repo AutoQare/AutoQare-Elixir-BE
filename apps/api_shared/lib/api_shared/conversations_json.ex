@@ -18,12 +18,19 @@ defmodule ApiShared.ConversationsJSON do
 
   # ── Contacts ────────────────────────────────────────────────────────────────
 
-  @doc "**contact**: with its `leads: [{id, title, company, role, state}]`."
+  @doc "**contact**: with its `leads: [{id, title, company, role, state}]` (and on `GET`, `behaviour`)."
   def contact(c) do
     c
     |> base_contact()
     |> Map.put(:leads, Enum.map(c.leads, &Map.take(&1, [:id, :title, :company, :role, :state])))
+    |> behaviour(c)
   end
+
+  # AQ-10 §11.4: `GET /contacts/:id` carries the `behaviour` summary.
+  defp behaviour(json, %{behaviour: b}),
+    do: Map.put(json, :behaviour, ApiShared.BehaviourJSON.summary(b))
+
+  defp behaviour(json, _contact), do: json
 
   @doc "A contacts page row: the contact without `leads`, with `leads_count`."
   def contact_row(c), do: c |> base_contact() |> Map.put(:leads_count, c.leads_count)

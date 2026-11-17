@@ -9,6 +9,10 @@ defmodule Data.Repo.Migrations.CreateTeamMembers do
   One open membership per person per team (partial unique on `left_at IS
   NULL`); leaving sets `left_at` and the row stays. A team keeps at least one
   lead while it has members — a guard in `Core.Organisation`.
+
+  AQ-11 §7.4 (QP11-1): `daily_target`, the member's own daily target in
+  this team; null means the sum of the daily targets of the profiles they
+  own (`Core.Dashboards.Targets`).
   """
 
   def change do
@@ -19,9 +23,16 @@ defmodule Data.Repo.Migrations.CreateTeamMembers do
       add(:role, :string, null: false)
       add(:joined_at, :timestamptz, null: false)
       add(:left_at, :timestamptz)
+      add(:daily_target, :smallint)
     end
 
     create(constraint(:team_members, :role_known, check: "role IN ('lead','member')"))
+
+    create(
+      constraint(:team_members, :daily_target_not_negative,
+        check: "daily_target IS NULL OR daily_target >= 0"
+      )
+    )
 
     create(
       unique_index(:team_members, [:team_id, :user_id],

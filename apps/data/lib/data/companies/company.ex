@@ -5,6 +5,10 @@ defmodule Data.Companies.Company do
   lower, unaccented, trimmed, inner spaces collapsed), so "Bamboo Invest" and
   " bamboo  invest" meet the unique index. The domain is unique too, when
   there is one.
+
+  P10 (AQ-10 §6.3, QP10-7): `time_zone` (an IANA name) and where it came
+  from, `time_zone_source` ∈ `upwork · manual`, set only through
+  `zone_changeset/3`; both or neither.
   """
 
   use Data.Schema
@@ -14,6 +18,7 @@ defmodule Data.Companies.Company do
   alias Data.Vocabulary
 
   @size_bands Vocabulary.company_size_bands() |> Enum.map(&String.to_atom/1)
+  @zone_sources Vocabulary.time_zone_sources() |> Enum.map(&String.to_atom/1)
   @fields ~w(name domain website_url linkedin_url size_band industry hq_country notes_md)a
 
   @type t :: %__MODULE__{}
@@ -28,6 +33,8 @@ defmodule Data.Companies.Company do
     field(:industry, :string)
     field(:hq_country, :string)
     field(:notes_md, :string)
+    field(:time_zone, :string)
+    field(:time_zone_source, Ecto.Enum, values: @zone_sources)
 
     belongs_to(:organisation, Organisation)
     belongs_to(:created_by_user, User)
@@ -79,6 +86,23 @@ defmodule Data.Companies.Company do
       message: "is already a company's"
     )
     |> foreign_key_constraint(:organisation_id)
+  end
+
+  @doc """
+  The company's time zone and its source: an IANA name with `:upwork` or
+  `:manual`, or `nil` for both (cleared).
+  """
+  def zone_changeset(company, zone, source) do
+    company
+    |> change(time_zone: zone, time_zone_source: zone && source)
+    |> validate_change(:time_zone, fn :time_zone, zone ->
+      case DateTime.now(zone) do
+        {:ok, _now} -> []
+        _unknown -> [time_zone: "is not a known IANA time zone"]
+      end
+    end)
+    |> check_constraint(:time_zone_source, name: :time_zone_source_known)
+    |> check_constraint(:time_zone, name: :time_zone_with_source)
   end
 
   defp put_normalized(changeset) do

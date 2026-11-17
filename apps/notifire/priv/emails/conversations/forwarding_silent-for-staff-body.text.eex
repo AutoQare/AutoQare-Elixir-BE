@@ -1,0 +1,14 @@
+Hi <%= @first_name || "there" %>,
+
+<%= @title %>
+
+No mail has reached this forwarding address for 14 days.
+<%= if @body do %>
+
+<%= @body %>
+<% end %>
+
+<%= facts_text(@facts) %>
+<%= if @url do %>Open the customer: <%= @url %><% end %>
+
+Check that Gmail still forwards to it.

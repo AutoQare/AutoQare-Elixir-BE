@@ -1,0 +1,8 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph("No mail has reached this forwarding address for 14 days.") %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Open the customer", @url) %>
+<%= link(@url) %>
+<%= paragraph("Check that Gmail still forwards to it.") %>

@@ -1,6 +1,6 @@
 defmodule Notifire.Delivery do
   @moduledoc """
-  Sending what the ledger says is due (AQ-08 §7.2, §11.4; mCart's
+  Sending what the ledger says is due (AQ-08 §7.2, §11.4; tCart's
   `Notifire.Delivery.run/1`, over `notification_deliveries`).
 
   **The far side of the seam.** `core` and `notifire` are siblings, so
@@ -12,11 +12,13 @@ defmodule Notifire.Delivery do
   `deliver_after` first, at most 200, **each under `FOR UPDATE SKIP
   LOCKED` in its own transaction**, so two runs never take the same row.
   For each:
-  - **the person has since turned the channel off** for the group →
+  - **the person has since turned the channel off** for the group or the
+    kind (P10b: off at either level; a locked kind can't be) →
     `skipped · preference_off`;
-  - **an email whose notification was read** → `skipped · read`, except
-    the `meetings` and `account` groups' (a meeting's email carries its
-    invite, the digest is the point);
+  - **a staff email whose notification was read** → `skipped · read`,
+    except the `meetings`, `account` and `system` groups' and a locked
+    kind's; **a customer's email is never skipped as read** (AQ-10B
+    QP10b-11);
   - **push**: to every browser the person turned on in their app; sent if
     any took it; a 404 or 410 deletes that browser; none left (or no VAPID
     keys) → `skipped · no_target`; browsers left but every one refusing →
@@ -31,12 +33,19 @@ defmodule Notifire.Delivery do
   `deliver_after` is what quiet hours set, so a held row is simply not due
   yet: deferred, never dropped. Workers hold no rules: every rule is
   asserted here.
+
+  **P10b:** push words come from the kind's `push.md` (AQ-10B §7.2), and
+  each run also sends the `customer_mail` rows waiting for customers with
+  no portal login (QP10b-2), each in its own transaction under the same
+  lock, three attempts.
   """
 
   alias Data.Notifications
-  alias Data.Notifications.{Deliveries, Delivery, Notification, Preferences}
+  alias Data.Notifications.{CustomerMails, Deliveries, Delivery, KindPreference}
+  alias Data.Notifications.{KindPreferences, Mail, Notification, Preferences}
   alias Data.Repo
   alias Notifire.Email
+  alias Notifire.Emails.{Renderer, Templates}
   alias Notifire.Mailer
   alias Notifire.Push
 
@@ -45,7 +54,7 @@ defmodule Notifire.Delivery do
   @most 200
   @attempts 3
   @retry_s 5 * 60
-  @email_always ~w(meetings account)
+  @email_always ~w(meetings account system)
 
   @doc """
   Sends everything due at `now`. Answers `%{sent, skipped, failed}`
@@ -60,7 +69,51 @@ defmodule Notifire.Delivery do
         }
   def run(%DateTime{} = now, opts \\ []) do
     tally = sweep(%{sent: 0, skipped: 0, failed: 0}, now, opts, @most)
+    tally = customer_mail(tally, now, opts, @most)
     %{tally | skipped: tally.skipped + Deliveries.skip_unclaimed_for_system(now)}
+  end
+
+  # ── Customers with no portal login (AQ-10B §11.4, QP10b-2) ──────────────────
+
+  defp customer_mail(tally, _now, _opts, 0), do: tally
+
+  defp customer_mail(tally, now, opts, left) do
+    {:ok, outcome} =
+      Repo.transaction(fn ->
+        case CustomerMails.next_pending_for_system() do
+          nil -> :done
+          row -> send_customer_mail(row, now, opts)
+        end
+      end)
+
+    case outcome do
+      :done -> tally
+      outcome -> customer_mail(Map.update!(tally, outcome, &(&1 + 1)), now, opts, left - 1)
+    end
+  end
+
+  @doc "Sends one locked `customer_mail` row. Answers `:sent`, `:skipped` or `:failed`."
+  @spec send_customer_mail(map(), DateTime.t(), keyword()) :: :sent | :skipped | :failed
+  def send_customer_mail(row, now, opts) do
+    case Mail.customer(row.customer_id) do
+      %{user_id: nil} = customer ->
+        {email, rendered} = Email.for_customer_mail(row, customer)
+
+        case Mailer.deliver(email, Keyword.get(opts, :mailer, [])) do
+          {:ok, _metadata} ->
+            :ok = CustomerMails.mark_sent(row, rendered.html, rendered.text, now)
+            :sent
+
+          {:error, reason} ->
+            Logger.warning("customer mail #{row.id} failed: #{describe(reason)}")
+            _state = CustomerMails.record_failure(row, describe(reason), now, @attempts)
+            :failed
+        end
+
+      _gone_or_has_a_login ->
+        :ok = CustomerMails.mark_skipped(row, now)
+        :skipped
+    end
   end
 
   defp sweep(tally, _now, _opts, 0), do: tally
@@ -88,26 +141,37 @@ defmodule Notifire.Delivery do
 
     cond do
       is_nil(who) -> skip(row, :no_target, now)
-      switched_off?(row, group) -> skip(row, :preference_off, now)
-      read_first?(row, n, group) -> skip(row, :read, now)
+      switched_off?(row, n.notification_kind, group) -> skip(row, :preference_off, now)
+      read_first?(row, n, group, who) -> skip(row, :read, now)
       row.channel == :push -> push(row, n, who, now, opts)
       row.channel == :email -> email(row, n, who, now, opts)
     end
   end
 
-  defp switched_off?(_row, %{can_disable: false}), do: false
+  defp switched_off?(_row, %{is_locked: true}, _group), do: false
 
-  defp switched_off?(row, group) do
-    Preferences.switches(row.user_id, group.key)[row.channel] == false
+  defp switched_off?(row, kind, group) do
+    (group.can_disable and Preferences.switches(row.user_id, group.key)[row.channel] == false) or
+      kind_off?(row, kind)
   end
 
-  defp read_first?(%{channel: :email}, %{read_at: %DateTime{}}, group),
-    do: group.key not in @email_always
+  defp kind_off?(row, kind) do
+    case KindPreferences.get(row.user_id, kind.key) do
+      nil -> false
+      prefs -> KindPreference.switches(prefs)[row.channel] == false
+    end
+  end
 
-  defp read_first?(_row, _n, _group), do: false
+  defp read_first?(%{channel: :email}, %{read_at: %DateTime{}} = n, group, who),
+    do:
+      not who.customer? and group.key not in @email_always and
+        not n.notification_kind.is_locked
+
+  defp read_first?(_row, _n, _group, _who), do: false
 
   defp push(row, n, who, now, opts) do
-    payload = %{title: n.title, body: n.body, tag: n.id, url: Notification.open_path(n)}
+    words = push_words(n, who)
+    payload = %{title: words.title, body: words.body, tag: n.id, url: Notification.open_path(n)}
 
     if Push.configured?() do
       result = Push.deliver(row.user_id, who.app, payload, now, Keyword.get(opts, :push, []))
@@ -124,12 +188,21 @@ defmodule Notifire.Delivery do
 
   defp email(row, n, who, now, opts) do
     n
-    |> Email.for_notification(who, row.ics)
+    |> Email.for_notification(who, row.ics, now)
     |> Mailer.deliver(Keyword.get(opts, :mailer, []))
     |> case do
       {:ok, _metadata} -> sent(row, now)
       {:error, reason} -> fail(row, describe(reason), now)
     end
+  end
+
+  # A kind's push words from its `push.md`, else the row's own.
+  defp push_words(n, who) do
+    audience = if who.customer?, do: "customer", else: "staff"
+
+    if Templates.has?(n.notification_kind_key, audience),
+      do: Renderer.push(n.notification_kind_key, audience, %{title: n.title, body: n.body}),
+      else: %{title: n.title, body: n.body}
   end
 
   defp describe(reason) when is_binary(reason), do: reason

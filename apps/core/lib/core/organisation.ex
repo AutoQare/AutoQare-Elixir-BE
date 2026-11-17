@@ -14,6 +14,7 @@ defmodule Core.Organisation do
   alias Core.Audit
   alias Core.Audit.Labels
   alias Core.Leads.Pipelines
+  alias Core.Notifications.Account, as: AccountNotices
   alias Core.Organisation.Invitations
   alias Data.Accounts
   alias Data.Organisations
@@ -97,11 +98,22 @@ defmodule Core.Organisation do
     end
   end
 
-  @doc "`PUT /org/settings`: the timings, by the system admin. Name, timezone and currency ride along."
+  @doc """
+  `PUT /org/settings` (and `PATCH /organisation`, AQ-10B §11.4): the
+  timings, the emails' footer (`help_email`, `postal_address`) and (AQ-11
+  §7.4) the `working_days` that carry a daily target, by the system admin.
+  Name, timezone and currency ride along.
+  """
   @spec update_settings(Scope.t(), map()) :: {:ok, map()} | {:error, term()}
   def update_settings(%Scope{organisation: organisation} = scope, params) do
     params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
-    setting_params = Map.take(params, Enum.map(OrganisationSettings.fields(), &to_string/1))
+
+    setting_params =
+      Map.take(
+        params,
+        Enum.map(settable(), &to_string/1)
+      )
+
     org_params = Map.take(params, ~w(name timezone currency_code country_code))
 
     with :ok <- Access.why_not(scope, :update_settings, {:organisation, organisation}) do
@@ -110,7 +122,7 @@ defmodule Core.Organisation do
   end
 
   defp write_settings(%Scope{organisation: organisation} = scope, setting_params, org_params) do
-    fields = OrganisationSettings.fields()
+    fields = settable()
     before = Audit.snapshot(Organisations.get_settings(organisation.id), fields)
     org_before = Audit.snapshot(organisation, @org_fields)
 
@@ -128,6 +140,11 @@ defmodule Core.Organisation do
       {:error, changeset} -> Repo.rollback(changeset)
     end
   end
+
+  defp settable,
+    do:
+      OrganisationSettings.fields() ++
+        OrganisationSettings.texts() ++ OrganisationSettings.lists()
 
   defp record_organisation_change(_scope, org_params, _before, _updated) when org_params == %{},
     do: :ok
@@ -165,8 +182,16 @@ defmodule Core.Organisation do
 
   defp hand_once(_scope, %{user_id: id} = admin, %{id: id}, _now), do: {:ok, admin}
 
-  defp hand_once(scope, admin, user, now),
-    do: Repo.transaction(fn -> hand(scope, admin, user, now) end)
+  defp hand_once(scope, admin, user, now) do
+    case Repo.transaction(fn -> hand(scope, admin, user, now) end) do
+      {:ok, {handed, events}} ->
+        :ok = Core.Notifications.send_events(events)
+        {:ok, handed}
+
+      other ->
+        other
+    end
+  end
 
   defp staff_account(user) do
     if Data.Customers.get_by_user(user.id), do: {:error, :customer}, else: :ok
@@ -182,30 +207,50 @@ defmodule Core.Organisation do
         now: now
       )
 
-    Repo.preload(handed, [user: :person], force: true)
+    # AQ-10B §5.1 A10: both people told (locked).
+    old = Accounts.get_user(admin.user_id)
+    new = Accounts.with_person(user)
+    org = Scope.organisation_id(scope)
+
+    events = [
+      AccountNotices.security(new, org, {:admin_to, name_of(old)}, now),
+      if(old,
+        do: AccountNotices.security(old, org, {:admin_from, name_of(new)}, now),
+        else: []
+      )
+    ]
+
+    {Repo.preload(handed, [user: :person], force: true), events}
   end
+
+  defp name_of(%{person: %{display_name: name}}), do: name
+  defp name_of(_none), do: "The system admin"
 
   # ── People ──────────────────────────────────────────────────────────────────
 
   @doc """
-  `GET /people?team_id`: every staff person the caller may see — all of them
-  for an admin, their own teams' for anyone else — with email, teams and
-  roles, last signed in, and whether they are an admin.
+  `GET /people?team_id&$where`: every staff person the caller may see — all
+  of them for an admin, their own teams' for anyone else; `team_id` narrows
+  to one team — with email, teams and roles, last signed in, and whether
+  they are an admin. An admin in no team is still staff: an admin sees
+  them, unless a team is asked for. `$where` is `Data.Filters.People`'s
+  (`q`, `suspended`, `admin`).
   """
   @spec list_people(Scope.t(), map()) :: {:ok, [map()]} | {:error, term()}
-  def list_people(%Scope{organisation: organisation} = scope, filters \\ %{}) do
-    with :ok <- Access.why_not(scope, :read_people, :people) do
-      visible = visible_team_ids(scope, filters[:team_id] || filters["team_id"])
-      admins = organisation.id |> Organisations.list_admins() |> Map.new(&{&1.user_id, &1})
-      memberships = Teams.memberships_in(visible)
+  def list_people(%Scope{organisation: organisation} = scope, params \\ %{}) do
+    params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
+    team_id = Utils.presence(params["team_id"])
+
+    with :ok <- Access.why_not(scope, :read_people, :people),
+         visible = visible_team_ids(scope, team_id),
+         with_admins? = Scope.admin?(scope) and is_nil(team_id),
+         {:ok, users} <- Teams.people(organisation.id, visible, with_admins?, params["$where"]) do
+      admins = organisation.id |> Organisations.list_admins() |> MapSet.new(& &1.user_id)
+      memberships = visible |> Teams.memberships_in() |> Enum.group_by(& &1.user_id)
 
       people =
-        memberships
-        |> Enum.group_by(& &1.user_id)
-        |> Enum.map(fn {user_id, rows} ->
-          person(hd(rows).user, rows, Map.has_key?(admins, user_id))
-        end)
-        |> add_admins_without_teams(scope, admins, filters, Enum.map(memberships, & &1.user_id))
+        users
+        |> Enum.map(&person(&1, Map.get(memberships, &1.id, []), MapSet.member?(admins, &1.id)))
         |> Enum.sort_by(& &1.display_name)
 
       {:ok, people}
@@ -219,19 +264,6 @@ defmodule Core.Organisation do
         else: Scope.team_ids(scope)
 
     if team_id, do: Enum.filter(all, &(&1 == team_id)), else: all
-  end
-
-  # An admin in no team is still staff: an admin sees them, unless a team
-  # filter is on; everyone else sees their own teams and nothing beyond.
-  defp add_admins_without_teams(people, scope, admins, filters, seen) do
-    if filters[:team_id] || filters["team_id"] || not Scope.admin?(scope) do
-      people
-    else
-      extra =
-        for {user_id, admin} <- admins, user_id not in seen, do: person(admin.user, [], true)
-
-      people ++ extra
-    end
   end
 
   defp person(user, memberships, admin?) do
@@ -252,28 +284,33 @@ defmodule Core.Organisation do
   @page 50
 
   @doc """
-  `GET /org/audit?subject_kind&subject_id&actor&from&to&cursor`, newest first,
-  keyset. The system admin's alone (AQ-04A §8.5).
-  Answers `{:ok, events, next_cursor}`.
+  `GET /org/audit?$where&cursor`, newest first, keyset. The system admin's
+  alone (AQ-04A §8.5). `$where` is `Data.Filters.Audit`'s: `subject_kind`,
+  `subject_id`, `actor`, `action`, `occurred_at` (local days in the
+  organisation's zone). Answers `{:ok, events, next_cursor}`.
   """
   @spec list_audit(Scope.t(), map()) :: {:ok, [struct()], String.t() | nil} | {:error, term()}
   def list_audit(%Scope{organisation: organisation} = scope, params \\ %{}) do
-    with :ok <- Access.why_not(scope, :read_audit, {:organisation, organisation}),
-         {:ok, filters} <- audit_filters(scope, params) do
-      events = Data.Audit.list(organisation.id, filters, @page + 1)
-      {page, more} = Enum.split(events, @page)
+    params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
 
-      {:ok, Labels.attach(page), if(more == [], do: nil, else: encode_cursor(List.last(page)))}
+    with :ok <- Access.why_not(scope, :read_audit, {:organisation, organisation}),
+         {:ok, cursor} <- decode_cursor(params["cursor"]) do
+      base = %{
+        cursor: cursor,
+        team_ids: if(Scope.admin?(scope), do: nil, else: Scope.team_ids(scope))
+      }
+
+      audit_page(scope, base, params["$where"])
     end
   end
 
   @doc """
-  `GET /customers/:id/activity?cursor` (AQ-04B QP4b-22): the audit rows
-  about one customer — the customer's own and every row naming them —
-  newest first, keyset. **Every row for the system admin; a team lead, the
-  rows of their teams** (a row naming one of the teams they lead); staff
-  and the customer: not found. Answers `{:ok, events, next_cursor}`, the
-  shape of `GET /org/audit`.
+  `GET /customers/:id/activity?$where&cursor` (AQ-04B QP4b-22): the audit
+  rows about one customer — the customer's own and every row naming them —
+  newest first, keyset, narrowed by the audit log's `$where`. **Every row
+  for the system admin; a team lead, the rows of their teams** (a row
+  naming one of the teams they lead); staff and the customer: not found.
+  Answers `{:ok, events, next_cursor}`, the shape of `GET /org/audit`.
   """
   @spec customer_activity(Scope.t(), term(), map()) ::
           {:ok, [struct()], String.t() | nil} | {:error, term()}
@@ -286,53 +323,22 @@ defmodule Core.Organisation do
          {:ok, cursor} <- decode_cursor(params["cursor"]) do
       led = for {id, :lead} <- scope.roles.teams, do: id
 
-      filters = %{
+      base = %{
         customer_id: customer.id,
         cursor: cursor,
         team_ids: if(Scope.admin?(scope), do: nil, else: led)
       }
 
-      events = Data.Audit.list(organisation.id, filters, @page + 1)
+      audit_page(scope, base, params["$where"])
+    end
+  end
+
+  defp audit_page(%Scope{organisation: organisation} = scope, base, where) do
+    context = Data.Filters.context(scope, [])
+
+    with {:ok, events} <- Data.Audit.list(organisation.id, base, where, context, @page + 1) do
       {page, more} = Enum.split(events, @page)
-
       {:ok, Labels.attach(page), if(more == [], do: nil, else: encode_cursor(List.last(page)))}
-    end
-  end
-
-  defp audit_filters(scope, params) do
-    params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
-
-    with {:ok, from} <- time(params["from"]),
-         {:ok, to} <- time(params["to"]),
-         {:ok, cursor} <- decode_cursor(params["cursor"]) do
-      {:ok,
-       %{
-         subject_kind: params["subject_kind"],
-         subject_id: uuid(params["subject_id"]),
-         actor_user_id: uuid(params["actor"]),
-         from: from,
-         to: to,
-         cursor: cursor,
-         team_ids: if(Scope.admin?(scope), do: nil, else: Scope.team_ids(scope))
-       }}
-    end
-  end
-
-  defp time(nil), do: {:ok, nil}
-
-  defp time(value) when is_binary(value) do
-    case DateTime.from_iso8601(value) do
-      {:ok, at, _offset} -> {:ok, at}
-      _invalid -> {:error, {:missing, :from}}
-    end
-  end
-
-  defp uuid(nil), do: nil
-
-  defp uuid(value) do
-    case Ecto.UUID.cast(value) do
-      {:ok, id} -> id
-      :error -> Ecto.UUID.generate()
     end
   end
 

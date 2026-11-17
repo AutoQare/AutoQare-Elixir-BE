@@ -8,7 +8,9 @@ defmodule Core.Conversations.Notices do
   | Kind | Who | Dedupe |
   |---|---|---|
   | `conversations.reply_received` | the lead's owner; **the customer when the lead's team has `customer_sees_conversations` on** (AQ-08 QP8-5) | `message:<id>` |
-  | `conversations.triage_new` | the team's leads and the profile's owners, when known | `conversation:<id>:triage` |
+  | `conversations.triage_new` | the team's leads and the profile's owners, when known; for mail **and** a hand-typed message (AQ-10B G8) | `conversation:<id>:triage` |
+  | `conversations.reply_received` | also the lead's watchers (AQ-10B QP10b-15) | `message:<id>` |
+  | `conversations.contact_flagged` | the owners of the contact's leads, when a bounce marks a handle invalid or an unsubscribe marks the contact do-not-contact (AQ-10B §5.6 C7) | `contact:<id>:flagged:<class>:<message id>` |
 
   Each answers the socket events its new rows make (`notification_created`).
   """
@@ -17,6 +19,7 @@ defmodule Core.Conversations.Notices do
   alias Core.Leads.Words
   alias Core.Notifications
   alias Core.Realtime
+  alias Data.Notifications.LeadWatchers
   alias Data.Scope
   alias Data.Teams
 
@@ -38,10 +41,41 @@ defmodule Core.Conversations.Notices do
       dedupe_key: "message:#{message.id}"
     }
 
+    staff = Enum.uniq([lead.owner_user_id | LeadWatchers.watchers(lead.id)])
+
     [
-      tell(scope, lead.owner_user_id, "conversations.reply_received", attrs),
+      Enum.map(staff, &tell(scope, &1, "conversations.reply_received", attrs)),
       tell_customer(scope, lead, attrs)
     ]
+  end
+
+  @doc """
+  `conversations.contact_flagged` (AQ-10B §5.6 C7) to the owners of the
+  contact's leads: "Mei Chen unsubscribed: marked do-not-contact" or
+  "mei@corvid.example bounced: marked invalid".
+  """
+  @spec contact_flagged(Scope.t(), map(), :unsubscribe | {:bounce, String.t()}, map()) :: list()
+  def contact_flagged(scope, contact, what, message) do
+    {class, title} =
+      case what do
+        :unsubscribe -> {"unsubscribe", "#{contact.name} unsubscribed: marked do-not-contact"}
+        {:bounce, address} -> {"bounce", "#{address} bounced: marked invalid"}
+      end
+
+    owners =
+      for link <- Data.Contacts.leads_of(contact.id),
+          link.lead.owner_user_id,
+          uniq: true,
+          do: link.lead.owner_user_id
+
+    for user_id <- owners do
+      tell(scope, user_id, "conversations.contact_flagged", %{
+        organisation_id: contact.organisation_id,
+        title: title,
+        link_path: "/contacts/#{contact.id}",
+        dedupe_key: "contact:#{contact.id}:flagged:#{class}:#{message.id}"
+      })
+    end
   end
 
   defp tell_customer(scope, lead, attrs) do

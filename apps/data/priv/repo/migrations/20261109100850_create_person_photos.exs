@@ -3,7 +3,7 @@ defmodule Data.Repo.Migrations.CreatePersonPhotos do
 
   @moduledoc """
   A person's photo (AQ-01 §4.1): the link between `persons` and `media`,
-  one row per person. **One link table per owner** (mCart's pattern,
+  one row per person. **One link table per owner** (tCart's pattern,
   `document_media` in §4.3) rather than a `photo_media_id` column, because
   `media` points at `users` which points at `persons`: a column could not
   carry its foreign key inside `create_persons`.

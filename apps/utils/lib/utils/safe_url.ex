@@ -1,6 +1,6 @@
 defmodule Utils.SafeUrl do
   @moduledoc """
-  Link safety for content somebody else wrote (mCart's, ported): a task's
+  Link safety for content somebody else wrote (tCart's, ported): a task's
   links (AQ-02 §5.1) go through it on the way in, so the value never
   reaching storage is what keeps the next client safe without its own check.
 

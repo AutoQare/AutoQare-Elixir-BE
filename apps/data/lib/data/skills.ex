@@ -20,7 +20,27 @@ defmodule Data.Skills do
 
   def get(_organisation_id, _id), do: nil
 
-  @doc "An organisation's live skills by category then name; `q` narrows by name, `ids` to some."
+  @doc """
+  `GET /skills`: an organisation's live skills by category then name,
+  narrowed by `where` (the list's `$where`, `Data.Filters.Skills`: `q`,
+  `category`): `{:ok, skills}`, or the 422 `invalid_filter`.
+  """
+  @spec filtered(binary(), term()) :: {:ok, [Skill.t()]} | {:error, term()}
+  def filtered(organisation_id, where) do
+    base =
+      from(s in Skill,
+        where: s.organisation_id == ^organisation_id and is_nil(s.archived_at),
+        order_by: [asc: s.category, asc: s.name]
+      )
+
+    with {:ok, query} <- Data.Filters.where(base, Data.Filters.Skills, where),
+         do: {:ok, Repo.all(query)}
+  end
+
+  @doc """
+  An organisation's skills by category then name, for a reader other than
+  the list: `ids` narrows to some, `include_archived` keeps the archived.
+  """
   @spec list(binary(), keyword()) :: [Skill.t()]
   def list(organisation_id, opts \\ []) do
     query =
@@ -28,16 +48,6 @@ defmodule Data.Skills do
         where: s.organisation_id == ^organisation_id,
         order_by: [asc: s.category, asc: s.name]
       )
-
-    query =
-      case Keyword.get(opts, :q) do
-        q when is_binary(q) and q != "" ->
-          like = "%" <> String.replace(q, ~r/[%_\\]/, "") <> "%"
-          where(query, [s], ilike(s.name, ^like))
-
-        _none ->
-          query
-      end
 
     query =
       case Keyword.get(opts, :ids) do

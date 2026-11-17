@@ -415,6 +415,55 @@ defmodule Core.Ingest.Extension.NormalizeTest do
       assert details.client_member_since_on == ~D[2019-03-04]
     end
 
+    # AQ-12C B16: each count is the number next to its own words, never the
+    # line's first number ("4.81 of 22 reviews" is 22 reviews).
+    test "Upwork's client counts read the number next to their own words" do
+      details =
+        Normalize.run(
+          %{
+            "upwork" => %{
+              "client" => %{
+                "rating_text" => "4.8",
+                "reviews_text" => "4.81 of 22 reviews",
+                "jobs_posted_text" => "9 jobs posted",
+                "hire_rate_text" => "70% hire rate, 1 open job",
+                "open_jobs_text" => "70% hire rate, 1 open job",
+                "hires_text" => "7 hires, 2 active",
+                "active_hires_text" => "2 active"
+              }
+            }
+          },
+          @upwork
+        ).details
+
+      assert {details.client_reviews, details.client_open_jobs} == {22, 1}
+      assert {details.client_jobs_posted, details.client_hire_rate_pct} == {9, 70}
+      assert {details.client_hires, details.client_active_hires} == {7, 2}
+    end
+
+    test "a client count: the lone number is that number; without its words, nothing" do
+      details =
+        Normalize.run(
+          %{
+            "upwork" => %{
+              "client" => %{
+                "reviews_text" => " 1,204 ",
+                "open_jobs_text" => "70% hire rate",
+                "jobs_posted_text" => "Member since 2019",
+                "hires_text" => "80% hire rate, 3 open jobs",
+                "active_hires_text" => "no hires yet"
+              }
+            }
+          },
+          @upwork
+        ).details
+
+      assert details.client_reviews == 1204
+
+      for key <- ~w(client_open_jobs client_jobs_posted client_hires client_active_hires)a,
+          do: refute(Map.has_key?(details, key), "#{key}: #{inspect(details[key])}")
+    end
+
     test "the snapshot is the fields as sent, canonical, without captured_at" do
       a = %{
         "title" => "Go",

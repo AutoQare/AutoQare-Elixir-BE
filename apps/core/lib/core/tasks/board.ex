@@ -8,24 +8,26 @@ defmodule Core.Tasks.Board do
   primary assignee** (QP2-10), and order within a column by the chosen sort
   (QP2-9: a drop changes the state only).
 
-  P2's views are filters of the team's board now; `view` is gone (422):
+  P2's views and filters are the board's `$where` now
+  (`Data.Filters.Tasks`, AQ-11B §11.4), every one in SQL: `mine`,
+  `watching`, `customer_id` (a customer the caller may read; else 404),
+  `archived`, `q`, `priority`, `due` (in the organisation's zone),
+  `people`, `profile_id`, `stage_id`, `no_owner`. `$order` is
+  `Data.Filters.TasksSort`'s (`due` · `priority` · `inserted_at`). `team_id`
+  and `older` (`done` · `closed`) stay parameters; `view` is gone (422).
 
-  | Filter | Keeps |
-  |---|---|
-  | `mine=true` | assigned to me, my open steps on other tasks (as step cards), my own unassigned tasks and drafts (QP2-16) |
-  | `watching=true` | the tasks I watch |
-  | `customer_id` | the customer's tasks (a customer the caller may read) |
-
-  A member whose team's `peer_tasks` is `hidden` sees their own; with none,
-  `empty: "team_hidden"`. And P2's filters: `q`, `priority` (comma-separated, `normal`
-  for none), `due ∈ today · overdue · week · none`, `people`, `profile_id`,
-  `stage_id`, `no_owner`, `archived`, `older ∈ done · closed`; `sort ∈ due ·
-  priority · newest`.
+  `mine` changes the page's shape, not only its rows: my open steps on
+  other tasks are step cards, and In progress groups by my stages. A
+  member whose team's `peer_tasks` is `hidden` sees their own; with none,
+  `empty: "team_hidden"`. `people` (the sheet's chips) and `empty` read the
+  team's tasks under `mine`, `watching`, `customer_id` and `archived`
+  alone, so narrowing the sheet never hides a person to pick.
   """
 
   alias Core.Access
   alias Core.Tasks.{Cards, Person, Visibility}
   alias Data.Customers
+  alias Data.Filters
   alias Data.Scope
   alias Data.Tasks, as: Store
   alias Data.TaskStages
@@ -33,27 +35,40 @@ defmodule Core.Tasks.Board do
 
   @states Data.Tasks.Task.states()
   @older_days 30
-  @rank %{urgent: 0, high: 1, nil: 2, low: 3}
+  # What `people` and `empty` read: the board's shape, not the sheet's narrowing.
+  @view ~w(mine watching customer_id archived)
+  @people [participants: [user: [person: :photo]]]
 
-  @doc "`GET /board?team_id&…`: the page."
+  @doc "`GET /board?team_id&$where&$order&older`: the page."
   @spec page(Scope.t(), map(), DateTime.t()) :: {:ok, map()} | {:error, term()}
   def page(%Scope{} = scope, params, %DateTime{} = now) do
     params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
+    where = params["$where"]
 
     with true <- Scope.staff?(scope) || {:error, :not_found},
          :ok <- no_view(params),
          {:ok, team} <- team(scope, params["team_id"]),
-         {:ok, view, spec} <- view(scope, team, params) do
+         :ok <- customer(scope, Filters.value(where, "customer_id")),
+         context = Filters.context(scope, now: now),
+         visible = Visibility.filter(scope),
+         {:ok, tasks} <- Store.board(visible, team.id, where, params["$order"], context),
+         {:ok, viewed} <-
+           Store.board(
+             visible,
+             team.id,
+             Map.take(Filters.default(where, "archived", false), @view),
+             nil,
+             context,
+             @people
+           ) do
       me = Scope.user_id(scope)
-      tasks = Store.list(Visibility.filter(scope), view: spec, archived: on?(params["archived"]))
+      view = view(where)
       ctx = Cards.context(scope, tasks, now)
-      entries = entries(ctx, tasks, view, me)
+      shown = entries(ctx, tasks, view, me)
 
       hidden? =
         Scope.team_role(scope, team.id) == :member and not Visibility.peers?(scope, team.id)
 
-      people = people(entries)
-      shown = entries |> filter(params, ctx) |> sort(params["sort"])
       {columns, older} = columns(shown, params["older"], now)
       stages = TaskStages.list(me)
 
@@ -74,10 +89,10 @@ defmodule Core.Tasks.Board do
            ),
          in_progress_groups: groups(view, columns[:in_progress], stages),
          stages: Enum.map(stages, &%{id: &1.id, name: &1.name, position: &1.position}),
-         people: people,
+         people: people(viewed),
          team: %{id: team.id, name: team.name},
          teams: teams(scope),
-         empty: empty(view, hidden?, entries)
+         empty: empty(view, hidden?, viewed)
        }}
     end
   end
@@ -106,37 +121,33 @@ defmodule Core.Tasks.Board do
     end
   end
 
-  # `:mine` when `mine=true` (step cards, grouped by stage), else `:team`;
-  # the narrowings `Data.Tasks.list/2` applies, the team's first.
-  defp view(scope, team, params) do
-    me = Scope.user_id(scope)
-    mine = if on?(params["mine"]), do: [{:mine, me}], else: []
-    watching = if on?(params["watching"]), do: [{:watching, me}], else: []
-
-    with {:ok, customer} <- customer(scope, params["customer_id"]) do
-      view =
-        cond do
-          mine != [] -> :mine
-          customer != [] -> :customer
-          true -> :team
-        end
-
-      {:ok, view, [{:team, team.id}] ++ mine ++ watching ++ customer}
+  # `:mine` with `mine` (step cards, grouped by stage), `:customer` with
+  # `customer_id`, else `:team`.
+  defp view(where) do
+    cond do
+      on?(Filters.value(where, "mine")) -> :mine
+      equal(Filters.value(where, "customer_id")) not in [nil, ""] -> :customer
+      true -> :team
     end
   end
 
-  defp customer(scope, id) do
-    case Utils.presence(to_string(id || "")) do
-      nil ->
-        {:ok, []}
-
-      id ->
-        with %{} = customer <-
-               Customers.get(Scope.organisation_id(scope), id) || {:error, :not_found},
-             :ok <- Access.why_not(scope, :read, {:customer, customer}),
-             do: {:ok, [{:customer, customer.id}]}
+  # A customer the caller may read, or 404 (P2's rule); a malformed id is
+  # `Data.Filters`' 422.
+  defp customer(scope, value) do
+    with id when is_binary(id) <- equal(value),
+         {:ok, id} <- Ecto.UUID.cast(id),
+         %{} = customer <- Customers.get(Scope.organisation_id(scope), id) || {:error, :not_found} do
+      Access.why_not(scope, :read, {:customer, customer})
+    else
+      {:error, _reason} = error -> error
+      _not_one -> :ok
     end
   end
+
+  defp equal(%{"$EQUAL" => id}), do: id
+  defp equal(%{"$equal" => id}), do: id
+  defp equal(id) when is_binary(id), do: id
+  defp equal(_other), do: nil
 
   # Mine keeps what is mine as cards and my open steps on the rest as step
   # cards; otherwise every task is its card.
@@ -154,48 +165,7 @@ defmodule Core.Tasks.Board do
         )
   end
 
-  # ── Filters and order ───────────────────────────────────────────────────────
-
-  defp filter(entries, params, ctx) do
-    tests = [
-      q: &text?(&1, params["q"]),
-      priority: &priority?(&1, csv(params["priority"])),
-      due: &due?(&1, params["due"], ctx),
-      people: &people?(&1, csv(params["people"])),
-      profile_id: &(&1.profile_id == params["profile_id"]),
-      stage_id: &(&1.stage_id == params["stage_id"]),
-      no_owner: &(not Enum.any?(&1.participants, fn p -> p.level end))
-    ]
-
-    active =
-      for {key, test} <- tests,
-          (key == :no_owner and on?(params["no_owner"])) or
-            (key != :no_owner and present?(params[to_string(key)])),
-          do: test
-
-    Enum.filter(entries, fn {task, _item} -> Enum.all?(active, & &1.(task)) end)
-  end
-
-  defp text?(task, q),
-    do: String.contains?(String.downcase(task.title), String.downcase(String.trim(q)))
-
-  defp priority?(task, wanted),
-    do: Enum.any?(wanted, &(&1 == to_string(task.priority || "normal")))
-
-  defp people?(task, ids), do: Enum.any?(task.participants, &(&1.level && &1.user_id in ids))
-
-  defp due?(task, "today", ctx), do: due_today?(task, ctx)
-  defp due?(task, "overdue", ctx), do: Cards.overdue?(task, ctx)
-  defp due?(task, "none", _ctx), do: is_nil(task.due_at) and is_nil(task.due_on)
-
-  defp due?(task, "week", ctx) do
-    case due_day(task, ctx) do
-      nil -> false
-      day -> Date.diff(day, ctx.today) in 0..6
-    end
-  end
-
-  defp due?(_task, _other, _ctx), do: true
+  # ── What the counts read ────────────────────────────────────────────────────
 
   defp due_today?(task, ctx), do: due_day(task, ctx) == ctx.today
 
@@ -209,25 +179,6 @@ defmodule Core.Tasks.Board do
   end
 
   defp due_day(_task, _ctx), do: nil
-
-  defp sort(entries, "newest"),
-    do: Enum.sort_by(entries, fn {t, _i} -> t.inserted_at end, {:desc, DateTime})
-
-  defp sort(entries, "priority"),
-    do: Enum.sort_by(entries, fn {t, _i} -> {Map.fetch!(@rank, t.priority), due_key(t)} end)
-
-  defp sort(entries, _due), do: Enum.sort_by(entries, fn {t, _i} -> due_key(t) end)
-
-  # Due first, soonest first (a day sorts at its end); no due last; then the oldest.
-  defp due_key(%{due_at: %DateTime{} = at} = t),
-    do: {0, DateTime.to_unix(at, :microsecond), created(t)}
-
-  defp due_key(%{due_on: %Date{} = on} = t),
-    do: {0, DateTime.to_unix(DateTime.new!(on, ~T[23:59:59.999999]), :microsecond), created(t)}
-
-  defp due_key(t), do: {1, 0, created(t)}
-
-  defp created(t), do: DateTime.to_unix(t.inserted_at, :microsecond)
 
   # Done and Closed show 30 days unless `older` opens them.
   defp columns(entries, older, now) do
@@ -301,9 +252,9 @@ defmodule Core.Tasks.Board do
 
   defp primary(task), do: Enum.find_value(task.participants, &(&1.level == :primary && &1.user))
 
-  defp people(entries) do
-    entries
-    |> Enum.flat_map(fn {t, _i} -> for p <- t.participants, p.level, do: p.user end)
+  defp people(tasks) do
+    tasks
+    |> Enum.flat_map(fn t -> for p <- t.participants, p.level, do: p.user end)
     |> Enum.uniq_by(& &1.id)
     |> Enum.sort_by(& &1.person.display_name)
     |> Enum.map(&Person.view/1)
@@ -325,16 +276,6 @@ defmodule Core.Tasks.Board do
 
   defp open?(task), do: task.state in [:todo, :in_progress, :on_hold]
 
-  defp csv(nil), do: []
-
-  defp csv(value) when is_binary(value),
-    do: value |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
-
-  defp csv(values) when is_list(values), do: values
-
-  defp present?(nil), do: false
-  defp present?(value) when is_binary(value), do: String.trim(value) != ""
-  defp present?(_value), do: true
-
-  defp on?(value), do: value in [true, "true", "1"]
+  defp on?(%{} = value), do: on?(equal(value))
+  defp on?(value), do: value in [true, "true"]
 end

@@ -24,7 +24,9 @@ defmodule Core.Ingest.Extension do
 
   **The identity** (§8, QP5-9): *I applied* from an account that is
   another customer's channel is `{:identity_mismatch, …}` (409); *Save*
-  is allowed.
+  is allowed. AQ-12 (QP12-18): Indeed's account too, by its email
+  (`Utils.ChannelKey`'s `indeed:{email}`); YC and Wellfound are save-only
+  and read no account, so the profile picked by hand is never refused.
 
   Every write is `via: :extension` (the scope's), so its events are
   `actor_kind: extension` with the person, and they count as activity.
@@ -343,8 +345,8 @@ defmodule Core.Ingest.Extension do
   end
 
   # §8, QP5-9: an application from an account that is another customer's
-  # channel is recorded on nobody's profile.
-  defp identity(scope, source, link, profile) when source in [:linkedin, :upwork] do
+  # channel is recorded on nobody's profile. AQ-12: Indeed's by its email.
+  defp identity(scope, source, link, profile) when source in [:linkedin, :upwork, :indeed] do
     case Context.channel(scope, source, link) do
       {:channel, %{customer_id: id} = channel} when id != profile.customer_id ->
         {:error, {:identity_mismatch, mismatch(channel, profile, true)}}

@@ -21,8 +21,8 @@ defmodule Core.Jobs.LeadHooksTest do
     Map.merge(c, %{job: job, plain: plain})
   end
 
-  defp titles(scope, team, params) do
-    {:ok, %{items: items}} = Pool.list(scope, Map.put(params, "team_id", team.id), @now)
+  defp titles(scope, team, where) do
+    {:ok, %{items: items}} = Pool.list(scope, %{"team_id" => team.id, "$where" => where}, @now)
     items |> Enum.map(& &1.title) |> Enum.sort()
   end
 
@@ -47,25 +47,32 @@ defmodule Core.Jobs.LeadHooksTest do
     applied_job = job_fixture(fiza, team: c.backend, title: "Applied one")
     _applied = lead_fixture(fiza, job: applied_job, profile: c.golang, state: :in_progress)
 
-    assert titles(fiza, c.backend, %{"has_leads" => "true"}) == [
+    assert titles(fiza, c.backend, %{"has_leads" => %{"$EQUAL" => "true"}}) == [
              "Applied one",
              "Backend Developer"
            ]
 
-    assert titles(fiza, c.backend, %{"has_leads" => "false"}) == ["No leads"]
+    assert titles(fiza, c.backend, %{"has_leads" => %{"$EQUAL" => false}}) == ["No leads"]
 
     # To do is not an application: only the applied posting is left out.
-    assert titles(fiza, c.backend, %{"not_applied_with" => c.golang.id}) == [
+    assert titles(fiza, c.backend, %{"not_applied_with" => %{"$EQUAL" => c.golang.id}}) == [
              "Backend Developer",
              "No leads"
            ]
 
-    assert {:error, {:invalid, %{"has_leads" => _}}} =
-             Pool.list(fiza, %{"team_id" => c.backend.id, "has_leads" => "maybe"}, @now)
+    assert {:error, {:invalid_filter, %{"has_leads" => _}}} =
+             Pool.list(
+               fiza,
+               %{"team_id" => c.backend.id, "$where" => %{"has_leads" => "maybe"}},
+               @now
+             )
 
     assert Pool.list(
              fiza,
-             %{"team_id" => c.backend.id, "not_applied_with" => Ecto.UUID.generate()},
+             %{
+               "team_id" => c.backend.id,
+               "$where" => %{"not_applied_with" => Ecto.UUID.generate()}
+             },
              @now
            ) ==
              {:error, :not_found}
@@ -88,6 +95,17 @@ defmodule Core.Jobs.LeadHooksTest do
       )
 
     assert titles(fiza, c.backend, %{"not_applied_with" => c.golang.id}) == ["Backend Developer"]
+
+    # The keys are the checked profile's: one only inside $OR was never checked.
+    assert {:error, {:invalid_filter, %{"not_applied_with" => _}}} =
+             Pool.list(
+               fiza,
+               %{
+                 "team_id" => c.backend.id,
+                 "$where" => %{"$OR" => [%{"not_applied_with" => c.golang.id}]}
+               },
+               @now
+             )
   end
 
   test "a merge moves the leads; a profile with a lead on both jobs refuses it in words", c do

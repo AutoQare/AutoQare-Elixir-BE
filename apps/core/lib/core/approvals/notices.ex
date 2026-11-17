@@ -14,6 +14,15 @@ defmodule Core.Approvals.Notices do
   | `approvals.commented` | the requester and the reviewers, not the author | `approval_comment:<id>` |
   | `approvals.due_soon` · `approvals.overdue` | the open slots' people (overdue: the requester too) | `approval:<id>:<kind>:<due_at>` |
   | `approvals.expired` | the requester | `approval:<id>:expired` |
+  | `approvals.withdrawn` | the open slots' people (AQ-10B §5.4 P6) | `approval:<id>:withdrawn` |
+  | `approvals.sent` | the customer, when an approved reply is recorded as sent (P7) | `approval:<id>:sent` |
+
+  **Email (AQ-10B §11.4, QP10b-20):** `approvals.requested` emails for the
+  first version and for a revision that needs a new decision (it came
+  back from *changes requested*, or a slot had decided the version it
+  replaces), not otherwise; `approvals.decided` emails the requester
+  alone, never the other reviewers; `approvals.due_soon` never emails
+  (the seed).
   """
 
   alias Core.Approvals.Sheet
@@ -24,9 +33,15 @@ defmodule Core.Approvals.Notices do
   alias Data.Scope
   alias Data.Teams
 
-  @doc "`approvals.requested`: on submit and on each revision."
-  @spec requested(Scope.t(), map()) :: list()
-  def requested(scope, a) do
+  @doc """
+  `approvals.requested`: on submit and on each revision. `new_decision?`
+  (a revision's) says whether it needs a decision again; when false the
+  row is in-app and push only.
+  """
+  @spec requested(Scope.t(), map(), boolean()) :: list()
+  def requested(scope, a, new_decision? \\ true) do
+    email? = a.version_count == 1 or new_decision?
+
     tell(
       scope,
       a,
@@ -37,30 +52,58 @@ defmodule Core.Approvals.Notices do
         if a.version_count == 1,
           do: "#{who} asks for your approval: #{a.title}",
           else: "#{who} sent version #{a.version_count} of #{a.title} for your approval"
-      end
+      end,
+      if(email?, do: nil, else: ~w(push extension))
     )
   end
 
-  @doc "`approvals.decided`: the outcome, to the requester and the other reviewers."
-  @spec decided(Scope.t(), map()) :: list()
-  def decided(scope, a) do
-    who_to = requester(a) ++ people(a, a.reviewers)
-
+  @doc "`approvals.withdrawn` to the open slots' people: \"Fiza withdrew Reply to Mei Chen\"."
+  @spec withdrawn(Scope.t(), map()) :: list()
+  def withdrawn(scope, a) do
     tell(
       scope,
       a,
-      who_to,
-      "approvals.decided",
-      "approval:#{a.id}:outcome:#{a.state}:#{a.version_count}",
-      fn who ->
-        case {a.state, Scope.user_id(scope)} do
-          {:approved, nil} -> "#{a.title} was approved automatically"
-          {:approved, _by} -> "#{who} approved #{a.title}"
-          {:changes_requested, _by} -> "#{who} asked for changes to #{a.title}"
-          {:rejected, _by} -> "#{who} rejected #{a.title}"
-        end
-      end
+      people(a, Sheet.open_slots(a)),
+      "approvals.withdrawn",
+      "approval:#{a.id}:withdrawn",
+      fn who -> "#{who} withdrew #{a.title}" end
     )
+  end
+
+  @doc "`approvals.sent` to the customer: \"The team sent your approved reply: Reply to Mei Chen\"."
+  @spec sent(Scope.t(), map()) :: list()
+  def sent(scope, a) do
+    customer = if a.customer && a.customer.user_id, do: [{a.customer.user_id, true}], else: []
+
+    tell(scope, a, customer, "approvals.sent", "approval:#{a.id}:sent", fn who ->
+      "#{who} sent what you approved: #{a.title}"
+    end)
+  end
+
+  @doc """
+  `approvals.decided`: the outcome, to the requester (with email) and the
+  other reviewers (in-app and push only, AQ-10B QP10b-20).
+  """
+  @spec decided(Scope.t(), map()) :: list()
+  def decided(scope, a) do
+    requester = requester(a)
+    requester_ids = Enum.map(requester, &elem(&1, 0))
+    others = Enum.reject(people(a, a.reviewers), fn {id, _c} -> id in requester_ids end)
+    dedupe = "approval:#{a.id}:outcome:#{a.state}:#{a.version_count}"
+
+    words = fn who ->
+      case {a.state, Scope.user_id(scope)} do
+        {:approved, nil} -> "#{a.title} was approved automatically"
+        {:approved, _by} -> "#{who} approved #{a.title}"
+        {:changes_requested, _by} -> "#{who} asked for changes to #{a.title}"
+        {:rejected, _by} -> "#{who} rejected #{a.title}"
+      end
+    end
+
+    [
+      tell(scope, a, requester, "approvals.decided", dedupe, words),
+      tell(scope, a, others, "approvals.decided", dedupe, words, ~w(push extension))
+    ]
   end
 
   @doc "`approvals.commented`: the requester and the reviewers, not the author."
@@ -123,8 +166,9 @@ defmodule Core.Approvals.Notices do
   defp requester(%{requested_by_user_id: nil}), do: []
   defp requester(a), do: [{a.requested_by_user_id, false}]
 
-  # Each once, never the actor, worded for the recipient.
-  defp tell(scope, a, who_to, kind, dedupe, words) do
+  # Each once, never the actor, worded for the recipient; `only` narrows
+  # the channels beyond the bell (the seam's `:only_channels`).
+  defp tell(scope, a, who_to, kind, dedupe, words, only \\ nil) do
     me = Scope.user_id(scope)
     actor = me && Accounts.get_user(me)
     names? = Teams.get_settings(a.team_id).customer_sees_staff_names
@@ -133,7 +177,8 @@ defmodule Core.Approvals.Notices do
       ensure(a, user_id, kind, dedupe,
         title: words.(who(actor, a, customer?, names?)),
         actor: if(customer? and not names?, do: nil, else: actor),
-        link: link(a, customer?)
+        link: link(a, customer?),
+        only: only
       )
     end
   end
@@ -161,7 +206,8 @@ defmodule Core.Approvals.Notices do
         approval_id: a.id,
         title: opts[:title],
         link_path: opts[:link],
-        dedupe_key: dedupe
+        dedupe_key: dedupe,
+        only_channels: opts[:only]
       })
 
     if row.is_new,

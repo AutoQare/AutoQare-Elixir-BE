@@ -21,8 +21,10 @@ defmodule ApiTeam.Router do
   contacts, conversations and messages, `.eml`, triage and *Classify*,
   meetings and their ICS. P7 (AQ-07 §11.1): approvals, their verbs and
   comments, a lead's approvals, a customer's approval policies. P8 (AQ-08 §11.3): delivery
-  health. Every later phase adds its staff routes here
-  (PLAN §15.4).
+  health. P10 (AQ-10 §11.4): Behaviour, observations, watches and *Forget*. P11 (AQ-11 §7.4):
+  the dashboard (*My numbers*, *Team* and its CSV) and a member's daily target. P12 (AQ-12
+  §11.4): the import centre (imports, their rows, commit, undo). Every later
+  phase adds its staff routes here (PLAN §15.4).
   """
 
   use Phoenix.Router
@@ -50,6 +52,9 @@ defmodule ApiTeam.Router do
 
       get "/org", OrgController, :show
       put "/org/settings", OrgController, :update_settings
+      # AQ-10B §11.4's names for the same, with `help_email` and `postal_address`.
+      get "/organisation", OrgController, :show
+      patch "/organisation", OrgController, :update_settings
       get "/org/audit", OrgController, :audit
 
       get "/teams", TeamController, :index
@@ -60,6 +65,8 @@ defmodule ApiTeam.Router do
       get "/teams/:id/settings", TeamController, :settings
       put "/teams/:id/settings", TeamController, :put_settings
       get "/teams/:id/members", TeamController, :members
+      # AQ-11 §7.4: a member's daily target.
+      patch "/teams/:id/members/:user_id", TeamController, :update_member
       post "/teams/:id/members/:user_id/role", TeamController, :change_role
       delete "/teams/:id/members/:user_id", TeamController, :remove_member
 
@@ -199,6 +206,14 @@ defmodule ApiTeam.Router do
       post "/leads/:id/cv", LeadController, :cv
       post "/leads/:id/pipeline", LeadController, :pipeline
 
+      # *Watch* and *Mute* a lead, mute a customer (AQ-10B §11.4).
+      post "/leads/:id/watch", LeadWatchController, :watch
+      delete "/leads/:id/watch", LeadWatchController, :unwatch
+      post "/leads/:id/mute", MuteController, :mute_lead
+      delete "/leads/:id/mute", MuteController, :unmute_lead
+      post "/customers/:id/mute", MuteController, :mute_customer
+      delete "/customers/:id/mute", MuteController, :unmute_customer
+
       # The lead page, the Tracker, retention (AQ-04B §8.1).
       get "/leads/:id/history", LeadController, :history
       post "/leads/:id/follow-up", LeadController, :follow_up
@@ -215,6 +230,11 @@ defmodule ApiTeam.Router do
 
       get "/tracker", TrackerController, :index
       get "/tracker.csv", TrackerController, :csv
+
+      # AQ-11 §7.4: the dashboard.
+      get "/dashboard/me", DashboardController, :me
+      get "/dashboard/team", DashboardController, :team
+      get "/dashboard/team.csv", DashboardController, :team_csv
 
       get "/saved-views", SavedViewController, :index
       post "/saved-views", SavedViewController, :create
@@ -305,6 +325,18 @@ defmodule ApiTeam.Router do
       put "/customers/:id/approval-policies/:kind", ApprovalController, :put_policy
       delete "/customers/:id/approval-policies/:kind", ApprovalController, :delete_policy
 
+      # Behaviour and watches (AQ-10 §11.4).
+      get "/behaviour", BehaviourController, :index
+      get "/behaviour/:kind/:id", BehaviourController, :show
+      get "/behaviour/:kind/:id/observations", BehaviourController, :observations
+      post "/observations", BehaviourController, :create_observation
+      post "/contacts/:id/forget", BehaviourController, :forget_contact
+      post "/companies/:id/forget-people", BehaviourController, :forget_people
+      get "/watches", WatchController, :index
+      post "/watches", WatchController, :create
+      patch "/watches/:id", WatchController, :update
+      delete "/watches/:id", WatchController, :delete
+
       # The extension (AQ-05 §11.2): connect codes, devices, Settings ›
       # Extension. `connect-codes` before `:id`, so it is not an id.
       post "/devices/connect-codes", DeviceController, :connect_code
@@ -312,6 +344,18 @@ defmodule ApiTeam.Router do
       delete "/devices/:id", DeviceController, :delete
       get "/extension/health", ExtensionController, :health
       get "/extension/configs", ExtensionController, :configs
+
+      # The import centre (AQ-12 §11.4): Data › Import, Settings › Imports.
+      # Team leads of the import's team and the system admin.
+      get "/imports", ImportController, :index
+      post "/imports", ImportController, :create
+      get "/imports/:id", ImportController, :show
+      patch "/imports/:id", ImportController, :update
+      get "/imports/:id/rows", ImportController, :rows
+      patch "/imports/:id/rows/:row_id", ImportController, :update_row
+      post "/imports/:id/rows/:row_id/skip", ImportController, :skip_row
+      post "/imports/:id/commit", ImportController, :commit
+      post "/imports/:id/undo", ImportController, :undo
 
       # Delivery health (AQ-08 §9): the system admin's Settings › System.
       get "/deliveries/health", DeliveryController, :health
@@ -335,6 +379,8 @@ defmodule ApiTeam.Router do
       get "/clock", DevController, :clock
       post "/clock", DevController, :set_clock
       post "/sweeps", DevController, :sweeps
+      # AQ-10B §11.4: who was told what since a moment, for a run's checks.
+      get "/notifications", DevController, :notifications
     end
   end
 

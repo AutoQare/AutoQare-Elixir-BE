@@ -1,0 +1,8 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph("Good news: your search moved forward.") %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("See your application", @url) %>
+<%= link(@url) %>
+<%= if @no_login do %><%= paragraph("Ask your team for a portal invitation to see everything.") %><% end %>

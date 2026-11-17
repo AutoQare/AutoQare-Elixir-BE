@@ -1,0 +1,14 @@
+Hi <%= @first_name || "there" %>,
+
+<%= @title %>
+
+Someone asked to move an AutoQare account to this address. Until you confirm it, nothing changes and the old address still signs in.
+<%= if @body do %>
+
+<%= @body %>
+<% end %>
+
+<%= facts_text(@facts) %>
+<%= if @url do %>Confirm this address: <%= @url %><% end %>
+
+The link lasts a day. If this wasn’t you, don’t follow it.

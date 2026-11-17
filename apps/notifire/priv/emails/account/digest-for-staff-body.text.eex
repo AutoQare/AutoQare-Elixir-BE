@@ -1,0 +1,12 @@
+Hi <%= @first_name || "there" %>,
+
+<%= @title %>
+<%= if @body do %>
+
+<%= @body %>
+<% end %>
+<%= for item <- @items do %>
+- <%= item %><% end %>
+
+<%= facts_text(@facts) %>
+<%= if @url do %>Open your notifications: <%= @url %><% end %>

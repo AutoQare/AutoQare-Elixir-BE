@@ -1,0 +1,7 @@
+<%= greeting(@first_name) %>
+<%= heading(@title) %>
+<%= paragraph("It’s tomorrow.") %>
+<%= paragraph(@body) %>
+<%= facts(@facts) %>
+<%= button("Open the lead", @url) %>
+<%= link(@url) %>

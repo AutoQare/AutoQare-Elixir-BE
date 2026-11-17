@@ -233,4 +233,14 @@ defmodule ApiShared.FallbackControllerTest do
     assert body["error"]["message"] == "This isn't yours to decide."
     assert FallbackController.describe(:not_reviewer).code == "not_reviewer"
   end
+
+  test "invalid_filter: 422 naming the field the list doesn't take (AQ-11B §11.4)" do
+    {status, body, _conn} =
+      answer({:invalid_filter, %{"colour" => ["is not a filter of this list"]}})
+
+    assert status == 422
+    assert body["error"]["code"] == "invalid_filter"
+    assert body["error"]["message"] =~ "colour"
+    assert body["error"]["details"] == %{"colour" => ["is not a filter of this list"]}
+  end
 end

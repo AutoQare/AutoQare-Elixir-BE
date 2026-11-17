@@ -63,14 +63,30 @@ defmodule Data.Approvals do
 
   @doc """
   Approvals by `opts`: `team_id`, `customer_id` (with `customer_slot:
-  true`, only those with a customer slot, never a draft), `lead_id`,
-  `profile_id`, `kind`, `state`, `ids`. Newest first, at most 500.
+  true`, only those with a customer slot, never a draft), `state`. Newest
+  first, at most 500.
   """
   @spec list(keyword()) :: [Approval.t()]
   def list(opts) do
+    opts |> base() |> load_all()
+  end
+
+  @doc """
+  The approvals page's rows (AQ-07 §11.4, AQ-11B §11.4): `opts` as
+  `list/1` (whose — the team's, or the customer's own), narrowed by
+  `where` (the list's `$where`, `Data.Filters.Approvals`). Newest first, at
+  most 500: `{:ok, approvals}`, or the 422 `invalid_filter`.
+  """
+  @spec page(keyword(), term(), Data.Filters.context()) ::
+          {:ok, [Approval.t()]} | {:error, term()}
+  def page(opts, where, context) do
+    with {:ok, query} <- Data.Filters.where(base(opts), Data.Filters.Approvals, where, context),
+         do: {:ok, load_all(query)}
+  end
+
+  defp base(opts) do
     from(a in Approval, order_by: [desc: a.updated_at, desc: a.id], limit: 500)
     |> narrow(opts)
-    |> load_all()
   end
 
   defp narrow(query, opts) do
@@ -81,20 +97,8 @@ defmodule Data.Approvals do
       {:customer_id, id}, q when is_binary(id) ->
         where(q, [a], a.customer_id == ^id)
 
-      {:lead_id, id}, q when is_binary(id) ->
-        where(q, [a], a.lead_id == ^id)
-
-      {:profile_id, id}, q when is_binary(id) ->
-        where(q, [a], a.profile_id == ^id)
-
-      {:kind, kind}, q when is_atom(kind) and not is_nil(kind) ->
-        where(q, [a], a.approval_kind == ^kind)
-
       {:state, state}, q when is_atom(state) and not is_nil(state) ->
         where(q, [a], a.state == ^state)
-
-      {:ids, ids}, q when is_list(ids) ->
-        where(q, [a], a.id in ^ids)
 
       {:customer_slot, true}, q ->
         where(q, [a], a.state != :draft and a.id in subquery(customer_slotted()))

@@ -1,0 +1,1 @@
+<p style="margin:8px 0 0 0;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#5C6572;word-break:break-all;">Or open this link: <a href="<%= @url %>" style="color:#0E7C86;text-decoration:underline;"><%= @url %></a></p>

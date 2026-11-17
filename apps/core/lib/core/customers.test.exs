@@ -150,11 +150,21 @@ defmodule Core.CustomersTest do
     assert names.(Customers.list(front_lead)) == ["Imran"]
     assert names.(Customers.list(front_lead, %{"team_id" => frontend.id})) == ["Imran"]
     assert names.(Customers.list(front_lead, %{"team_id" => backend.id})) == []
-    assert names.(Customers.list(front_lead, %{"mine" => "true"})) == ["Imran"]
+    mine = fn value -> %{"$where" => %{"mine" => %{"$EQUAL" => value}}} end
+    assert names.(Customers.list(front_lead, mine.("true"))) == ["Imran"]
+    assert names.(Customers.list(front_lead, mine.(false))) == []
     assert names.(Customers.list(admin)) == ["Imran", "Lone", "Tanweer"]
-    assert names.(Customers.list(admin, %{"q" => "tan"})) == ["Tanweer"]
+    assert names.(Customers.list(admin, mine.(true))) == []
+
+    assert names.(Customers.list(admin, %{"$where" => %{"q" => %{"$ILIKE" => "%tan%"}}})) == [
+             "Tanweer"
+           ]
+
     assert names.(Customers.list(lead)) == ["Tanweer"]
-    assert Customers.list(lead, %{"status" => "nope"}) == {:error, {:missing, :status}}
+
+    assert {:error, {:invalid_filter, %{"status" => _}}} =
+             Customers.list(lead, %{"$where" => %{"status" => %{"$EQUAL" => "nope"}}})
+
     assert Customers.get(lead, lone.id) == {:error, :not_found}
     assert Customers.get(front_lead, lone.id) == {:error, :not_found}
     assert {:ok, _lone} = Customers.get(admin, lone.id)

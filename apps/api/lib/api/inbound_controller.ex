@@ -11,7 +11,9 @@ defmodule Api.InboundController do
     included; 413 over 30 MB (`Api.Endpoint`); 429 when one address
     floods.
   - `POST /dev/inbound {to, eml}` (dev servers only): 200 `{outcome,
-    message_id, conversation_id}`, the ids `null` unless it landed.
+    message_id, conversation_id, alert_jobs}`, the ids `null` unless it
+    landed, `alert_jobs` the pool jobs a job alert gave (AQ-12 §7), `null`
+    for any other mail.
   """
 
   use Phoenix.Controller, formats: [:json]
@@ -32,7 +34,7 @@ defmodule Api.InboundController do
 
   def dev(conn, params) do
     with {:ok, answer} <- Inbound.dev(Scope.system(), params, Clock.now()),
-         do: json(conn, Map.take(answer, [:outcome, :message_id, :conversation_id]))
+         do: json(conn, Map.take(answer, [:outcome, :message_id, :conversation_id, :alert_jobs]))
   end
 
   @doc """

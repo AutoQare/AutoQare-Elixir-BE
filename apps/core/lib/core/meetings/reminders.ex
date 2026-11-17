@@ -9,7 +9,7 @@ defmodule Core.Meetings.Reminders do
     while incomplete — so a reschedule's new jobs never collide with the
     old ones, which are cancelled (`drop/1`).
   - **A job finds its meeting moved or cancelled and does nothing**
-    (mCart's timers): `remind/4` checks the status and the start it was
+    (tCart's timers): `remind/4` checks the status and the start it was
     planned for, and that this offset is still the nearest one due (a late
     24 h job after the 1 h mark says nothing, so nobody hears "in 24 hours"
     an hour before).

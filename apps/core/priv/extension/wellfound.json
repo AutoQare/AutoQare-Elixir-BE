@@ -1,0 +1,105 @@
+{
+  "site": "wellfound",
+  "contract": 1,
+  "save_only": true,
+  "pages": {
+    "job": {
+      "url": ["re:^/jobs/\\d+", "re:^/company/[^/]+/jobs/\\d+"],
+      "ready": ["[data-test='JobDetail']", "[data-test='JobTitle']", "main h1"]
+    }
+  },
+  "fields": {
+    "title": {
+      "on": "job",
+      "css": ["[data-test='JobTitle']", "[data-test='JobDetail'] h1", "main h1"],
+      "read": "text",
+      "required": true
+    },
+    "company_name": {
+      "on": "job",
+      "css": [
+        "[data-test='CompanyName']",
+        "[data-test='JobDetail-header'] a[href^='/company/']",
+        "a[href^='/company/']"
+      ],
+      "read": "text",
+      "required": true
+    },
+    "company_url": {
+      "on": "job",
+      "css": ["[data-test='CompanyName'][href]", "a[href^='/company/']"],
+      "read": "href",
+      "required": false
+    },
+    "location_text": {
+      "on": "job",
+      "css": ["[data-test='Location']", "[data-test='JobDetail-facts'] [data-test='Location']"],
+      "read": "text",
+      "required": false
+    },
+    "employment_text": {
+      "on": "job",
+      "css": ["[data-test='JobType']", "[data-test='JobDetail-facts'] [data-test='JobType']"],
+      "read": "text",
+      "required": false
+    },
+    "salary_text": {
+      "on": "job",
+      "css": [
+        "[data-test='Compensation']",
+        "[data-test='JobDetail-facts'] [data-test='Compensation']"
+      ],
+      "read": "text",
+      "required": false
+    },
+    "description_html": {
+      "on": "job",
+      "css": [
+        "[data-test='JobDescription']",
+        "[data-test='JobDetail'] .description",
+        "main article"
+      ],
+      "read": "html",
+      "required": true
+    },
+    "wellfound.stage_text": {
+      "on": "job",
+      "css": [
+        "[data-test='CompanyStage']",
+        "[data-test='JobDetail-header'] [data-test='CompanyStage']"
+      ],
+      "read": "text",
+      "required": false
+    },
+    "wellfound.remote_policy_text": {
+      "on": "job",
+      "css": [
+        "[data-test='RemotePolicy']",
+        "[data-test='JobDetail-facts'] [data-test='RemotePolicy']"
+      ],
+      "read": "text",
+      "required": false
+    },
+    "wellfound.timezone_text": {
+      "on": "job",
+      "css": ["[data-test='Timezones']", "[data-test='JobDetail-facts'] [data-test='Timezones']"],
+      "read": "text",
+      "required": false
+    },
+    "wellfound.visa_text": {
+      "on": "job",
+      "css": [
+        "[data-test='VisaSponsorship']",
+        "[data-test='JobDetail-facts'] [data-test='VisaSponsorship']"
+      ],
+      "read": "text",
+      "required": false
+    },
+    "wellfound.equity_text": {
+      "on": "job",
+      "css": ["[data-test='Equity']", "[data-test='JobDetail-facts'] [data-test='Equity']"],
+      "read": "text",
+      "required": false
+    }
+  }
+}

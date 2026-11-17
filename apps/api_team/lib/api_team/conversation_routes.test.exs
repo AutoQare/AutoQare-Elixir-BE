@@ -86,7 +86,7 @@ defmodule ApiTeam.ConversationRoutesTest do
     assert keys(match) == ~w(answer candidates contact)
     assert match["answer"] == "possible" and match["contact"] == nil
 
-    page = body(call(c.muaz, :get, "/v1/contacts?q=mei"))
+    page = body(call(c.muaz, :get, "/v1/contacts?$where[q][$ILIKE]=mei"))
     assert keys(page) == ~w(items next_cursor)
     assert [row] = page["items"]
     refute Map.has_key?(row, "leads")
@@ -225,6 +225,16 @@ defmodule ApiTeam.ConversationRoutesTest do
     [item] = triage["items"]
     assert keys(item) == ~w(candidates conversation customer first_message profile)
     assert item["first_message"]["children"] == []
+
+    owned =
+      call(c.muaz, :get, "/v1/triage?team_id=#{c.backend.id}&$where[profile_owner][$EQUAL]=me")
+
+    assert owned.status == 200 and length(body(owned)["items"]) <= 1
+
+    refused =
+      call(c.muaz, :get, "/v1/triage?team_id=#{c.backend.id}&$where[profile_owner][$IN][]=me")
+
+    assert refused.status == 422 and code(refused) == "invalid_filter"
 
     no_link =
       call(c.fiza, :post, "/v1/conversations/#{item["conversation"]["id"]}/create-lead", %{
